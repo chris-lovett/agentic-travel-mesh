@@ -19,7 +19,7 @@ experienceUI:
   replicaCount: 1
   resources:
     limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 2. Ingress API Gateway (Envoy)
 apiGw:
@@ -28,8 +28,8 @@ apiGw:
   adminPort: 9900
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 3. Travel Orchestrator Agent
 orchestrator:
@@ -37,8 +37,8 @@ orchestrator:
   port: 8080
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 4. Booking Sub-Agent
 bookingAgent:
@@ -46,8 +46,8 @@ bookingAgent:
   port: 8086
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 5. Weather Sub-Agent
 weatherAgent:
@@ -55,8 +55,8 @@ weatherAgent:
   port: 8087
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 6. Hotel MCP Tool
 hotelMcp:
@@ -64,8 +64,8 @@ hotelMcp:
   port: 8083
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 7. Flight MCP Tool
 flightMcp:
@@ -73,8 +73,8 @@ flightMcp:
   port: 8084
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 8. Weather MCP Tool
 weatherMcp:
@@ -82,8 +82,8 @@ weatherMcp:
   port: 8082
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 9. travel-igw (Envoy AI Gateway for Model Access)
 travelIgw:
@@ -92,8 +92,8 @@ travelIgw:
   adminPort: 9901
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 10. Foundation Model / Ollama Backend
 llmBackend:
@@ -101,8 +101,8 @@ llmBackend:
   port: 8081
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 11. Terminating Gateway (Vault Credential Injection for External MCP)
 terminatingGw:
@@ -111,8 +111,8 @@ terminatingGw:
   adminPort: 9902
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 12. External MCP Server
 externalMcp:
@@ -120,8 +120,8 @@ externalMcp:
   port: 8088
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 13. AI Observability: OpenTelemetry Collector & Span Relay
 otelCollector:
@@ -129,8 +129,8 @@ otelCollector:
   port: 4318
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
 
 # 14. INDIGO Analytic Engine
 indigoAnalytics:
@@ -138,5 +138,5 @@ indigoAnalytics:
   port: 8089
   replicaCount: 1
   resources:
-    limits: { cpu: "500m", memory: "512Mi" }
-    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }

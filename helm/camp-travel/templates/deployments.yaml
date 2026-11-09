@@ -12,6 +12,9 @@ spec:
       labels: { app: {{ .Values.experienceUI.name }} }
       annotations:
         consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/auto-instrument: "true"
+        consul.hashicorp.com/auto-instrument-language: "python"
+        consul.hashicorp.com/auto-instrument-collector: "http://otel-collector:4318"
         consul.hashicorp.com/connect-service: "{{ .Values.experienceUI.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.experienceUI.port }}"
         consul.hashicorp.com/transparent-proxy-exclude-inbound-ports: "3000"
@@ -95,6 +98,9 @@ spec:
       labels: { app: {{ .Values.orchestrator.name }} }
       annotations:
         consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/auto-instrument: "true"
+        consul.hashicorp.com/auto-instrument-language: "python"
+        consul.hashicorp.com/auto-instrument-collector: "http://otel-collector:4318"
         consul.hashicorp.com/connect-service: "{{ .Values.orchestrator.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.orchestrator.port }}"
         consul.hashicorp.com/connect-service-upstreams: "{{ .Values.bookingAgent.name }}:8086, {{ .Values.weatherAgent.name }}:8087, {{ .Values.travelIgw.name }}:10001, {{ .Values.otelCollector.name }}:4318"
@@ -136,6 +142,9 @@ spec:
       labels: { app: {{ .Values.bookingAgent.name }} }
       annotations:
         consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/auto-instrument: "true"
+        consul.hashicorp.com/auto-instrument-language: "python"
+        consul.hashicorp.com/auto-instrument-collector: "http://otel-collector:4318"
         consul.hashicorp.com/connect-service: "{{ .Values.bookingAgent.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.bookingAgent.port }}"
         consul.hashicorp.com/connect-service-upstreams: "{{ .Values.hotelMcp.name }}:8083, {{ .Values.flightMcp.name }}:8084, {{ .Values.terminatingGw.name }}:10002"
@@ -177,6 +186,9 @@ spec:
       labels: { app: {{ .Values.weatherAgent.name }} }
       annotations:
         consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/auto-instrument: "true"
+        consul.hashicorp.com/auto-instrument-language: "python"
+        consul.hashicorp.com/auto-instrument-collector: "http://otel-collector:4318"
         consul.hashicorp.com/connect-service: "{{ .Values.weatherAgent.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.weatherAgent.port }}"
         consul.hashicorp.com/connect-service-upstreams: "{{ .Values.weatherMcp.name }}:8082, {{ .Values.travelIgw.name }}:10001"
@@ -218,6 +230,9 @@ spec:
       labels: { app: {{ .Values.hotelMcp.name }} }
       annotations:
         consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/auto-instrument: "true"
+        consul.hashicorp.com/auto-instrument-language: "python"
+        consul.hashicorp.com/auto-instrument-collector: "http://otel-collector:4318"
         consul.hashicorp.com/connect-service: "{{ .Values.hotelMcp.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.hotelMcp.port }}"
     spec:
@@ -258,6 +273,9 @@ spec:
       labels: { app: {{ .Values.flightMcp.name }} }
       annotations:
         consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/auto-instrument: "true"
+        consul.hashicorp.com/auto-instrument-language: "python"
+        consul.hashicorp.com/auto-instrument-collector: "http://otel-collector:4318"
         consul.hashicorp.com/connect-service: "{{ .Values.flightMcp.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.flightMcp.port }}"
     spec:
@@ -298,6 +316,9 @@ spec:
       labels: { app: {{ .Values.weatherMcp.name }} }
       annotations:
         consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/auto-instrument: "true"
+        consul.hashicorp.com/auto-instrument-language: "python"
+        consul.hashicorp.com/auto-instrument-collector: "http://otel-collector:4318"
         consul.hashicorp.com/connect-service: "{{ .Values.weatherMcp.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.weatherMcp.port }}"
     spec:
@@ -375,6 +396,9 @@ spec:
       labels: { app: {{ .Values.llmBackend.name }} }
       annotations:
         consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/auto-instrument: "true"
+        consul.hashicorp.com/auto-instrument-language: "python"
+        consul.hashicorp.com/auto-instrument-collector: "http://otel-collector:4318"
         consul.hashicorp.com/connect-service: "{{ .Values.llmBackend.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.llmBackend.port }}"
     spec:
