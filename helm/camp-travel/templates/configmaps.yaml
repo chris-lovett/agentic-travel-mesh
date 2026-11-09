@@ -675,11 +675,92 @@ data:
         }
         traces_store.append(record)
 
-        # Forward span to Tempo OTLP receiver
+        # Forward standard OTLP span hierarchy into Tempo
         try:
-            import httpx
+            import httpx, uuid
+            now_ns = int(time.time() * 1e9)
+            raw_tid = str(data.get("trace_id", "")).replace("trace-camp-", "").replace("trace-", "")
+            if len(raw_tid) < 32:
+                raw_tid = (raw_tid + uuid.uuid4().hex)[:32]
+            else:
+                raw_tid = raw_tid[:32]
+
+            parent_span_id = uuid.uuid4().hex[:16]
+            agent_span_id = uuid.uuid4().hex[:16]
+            llm_span_id = uuid.uuid4().hex[:16]
+
+            otlp_spans = {
+                "resourceSpans": [
+                    {
+                        "resource": {
+                            "attributes": [
+                                {"key": "service.name", "value": {"stringValue": "camp-agentic-mesh"}},
+                                {"key": "gen_ai.system", "value": {"stringValue": "consul-ai-gw"}},
+                                {"key": "gen_ai.request.model", "value": {"stringValue": str(data.get("model", "meta-llama/llama-3-70b-instruct"))}},
+                                {"key": "consul.mesh.version", "value": {"stringValue": "2.1.0-enterprise"}},
+                            ]
+                        },
+                        "scopeSpans": [
+                            {
+                                "scope": {"name": "camp.telemetry"},
+                                "spans": [
+                                    {
+                                        "traceId": raw_tid,
+                                        "spanId": parent_span_id,
+                                        "name": "POST /api/travel/plan (API Gateway)",
+                                        "kind": 2,
+                                        "startTimeUnixNano": str(now_ns - 800000000),
+                                        "endTimeUnixNano": str(now_ns),
+                                        "attributes": [
+                                            {"key": "http.method", "value": {"stringValue": "POST"}},
+                                            {"key": "http.route", "value": {"stringValue": "/api/travel/plan"}},
+                                            {"key": "user.obo", "value": {"stringValue": str(data.get("user_obo", "traveler-101"))}},
+                                            {"key": "destination", "value": {"stringValue": str(data.get("destination", "San Francisco"))}},
+                                        ],
+                                        "status": {"code": 1},
+                                    },
+                                    {
+                                        "traceId": raw_tid,
+                                        "spanId": agent_span_id,
+                                        "parentSpanId": parent_span_id,
+                                        "name": "travel-orchestrator.synthesize",
+                                        "kind": 1,
+                                        "startTimeUnixNano": str(now_ns - 600000000),
+                                        "endTimeUnixNano": str(now_ns - 50000000),
+                                        "attributes": [
+                                            {"key": "service.name", "value": {"stringValue": "travel-orchestrator"}},
+                                            {"key": "sub_agents", "value": {"stringValue": "booking-agent,weather-agent"}},
+                                            {"key": "mcp_tools", "value": {"stringValue": "hotel-mcp,flight-mcp,external-mcp"}},
+                                        ],
+                                        "status": {"code": 1},
+                                    },
+                                    {
+                                        "traceId": raw_tid,
+                                        "spanId": llm_span_id,
+                                        "parentSpanId": agent_span_id,
+                                        "name": "travel-igw.chat.completions",
+                                        "kind": 3,
+                                        "startTimeUnixNano": str(now_ns - 400000000),
+                                        "endTimeUnixNano": str(now_ns - 100000000),
+                                        "attributes": [
+                                            {"key": "gen_ai.system", "value": {"stringValue": "consul-ai-gw"}},
+                                            {"key": "gen_ai.request.model", "value": {"stringValue": str(data.get("model", "meta-llama/llama-3-70b-instruct"))}},
+                                            {"key": "gen_ai.usage.prompt_tokens", "value": {"intValue": p_tok}},
+                                            {"key": "gen_ai.usage.completion_tokens", "value": {"intValue": c_tok}},
+                                            {"key": "gen_ai.usage.total_tokens", "value": {"intValue": tot_tok}},
+                                            {"key": "gen_ai.usage.cost_usd", "value": {"doubleValue": round(tot_tok * 0.000005, 5)}},
+                                            {"key": "vault.auth_broker", "value": {"stringValue": "token-injected"}},
+                                        ],
+                                        "status": {"code": 1},
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
             async with httpx.AsyncClient(timeout=2.0) as client:
-                await client.post("http://tempo:4318/v1/traces", json=data)
+                await client.post("http://tempo:4318/v1/traces", json=otlp_spans)
         except Exception:
             pass
 
