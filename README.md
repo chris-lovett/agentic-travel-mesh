@@ -1,9 +1,11 @@
 # 🧳 Consul Agentic Mesh Platform (CAMP) — Travel Booking Architecture
 
-Reference architecture and multi-agent reference implementation for the **Consul Agentic Mesh Platform (CAMP)**, following HashiCorp's official Travel Booking blueprint.
+Production reference architecture and multi-agent implementation designed to showcase the full power of the **Consul Agentic Mesh Platform (CAMP)** and **Consul Enterprise 2.1 Service Mesh** on Red Hat OpenShift & Kubernetes.
 
 [![Consul](https://img.shields.io/badge/Consul-2.1%20Enterprise-red)](https://developer.hashicorp.com/consul)
 [![Architecture](https://img.shields.io/badge/Architecture-CAMP%202.1-blue)](https://web-unified-docs-hashicorp.vercel.app/api/assets/consul/latest/img/architecture/camp-architecture.png)
+[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-GenAI%20Conventions-purple)](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
+[![Grafana Tempo](https://img.shields.io/badge/Tracing-Grafana%20Tempo-orange)](https://grafana.com/oss/tempo/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
 ---
@@ -44,48 +46,83 @@ graph TD
         TravelIGW --> LLM[🧠 Foundation Model / Ollama :8081]
     end
 
-    subgraph AI Observability & Analytics
+    subgraph AI Observability & Distributed Tracing
         Orchestrator -.-> OTel[📊 OpenTelemetry Collector :4318]
         BookingAgent -.-> OTel
         WeatherAgent -.-> OTel
         TravelIGW -.-> OTel
-        OTel --> Tempo[📈 Tempo / Grafana Traces]
-        OTel --> SpanRelay[📡 Span Relay]
-        SpanRelay --> Queue[(📬 BullMQ / Redis)]
-        Queue --> Indigo[🛡️ INDIGO Analytic Engine :8089]
+        OTel --> Tempo[📈 Grafana Tempo :3200 / :4317]
+        Tempo --> Grafana[📊 Grafana Dashboard :3000]
+        OTel --> Indigo[🛡️ INDIGO Analytic Engine :8089]
     end
 
-    ConsulCP[🏛️ Consul Control Plane - Catalog, Discovery, Intentions] -.-> Orchestrator
+    ConsulCP[🏛️ Consul Control Plane - Catalog, Discovery, Auto-Instrumentation, mTLS] -.-> Orchestrator
     ConsulCP -.-> BookingAgent
     ConsulCP -.-> WeatherAgent
 ```
 
 ---
 
-## 🌟 Key Architecture Capabilities
+## 🌟 Consul Agentic Mesh Platform (CAMP) Feature Capabilities
 
-1. **Experience UI & Review Backend (`:3000`)**:
-   * Interactive travel planner with pre-set enterprise scenarios.
-   * On-Behalf-Of (OBO) user token exchange via **IBM Verify**.
-   * Human-in-the-Loop (HITL) manager approval flow for corporate travel booking.
+This reference architecture serves as a comprehensive showcase of **Consul Enterprise 2.1 for AI / Agentic Workloads**:
 
-2. **Multi-Agent Runtime Fabric (`:8080`, `:8086`, `:8087`)**:
-   * **Travel Orchestrator Agent**: Master planner decomposing travel intent, invoking sub-agents concurrently, and generating executive summaries.
-   * **Booking Agent**: Interacts with hotel and flight MCP servers.
-   * **Weather Agent**: Ingests destination climate forecasts and provides clothing advisories.
+| Feature Capability | Where It Runs | Business & Technical Value |
+| :--- | :--- | :--- |
+| **🤖 Zero-Code Auto-Instrumentation** | Pod Annotations $\rightarrow$ Envoy + OTel | Automatically captures GenAI reasoning spans, token usage, and latency adhering to **OTel GenAI Semantic Conventions** without modifying Python agent source code. |
+| **⚡ Envoy AI Gateway (`travel-igw`)** | Ingress/Egress Gateway (:10001) | Sub-millisecond token rate limiting (TPM/RPM protection), model failover, and prompt governance before touching LLM endpoints. |
+| **🔑 Vault Credential Broker Injection** | `travel-igw` & `terminating-gw` | Zero-trust credential security. API keys (OpenAI, Anthropic, watsonx) and external partner GDS tokens are injected at the Envoy proxy layer—agents never store or see credentials. |
+| **🔐 SPIFFE Identity & Zero-Trust Intentions** | Consul Service Mesh Data Plane | Cryptographic x509 mTLS identity per serviceaccount (`spiffe://cluster.local/ns/camp-travel/sa/booking-agent`). Granular L4/L7 intentions prevent unauthorized agents from accessing sensitive MCP tools. |
+| **🛡️ Token Delegation & OBO Identity** | Ingress API Gateway (:10000) | Preserves user identity context (IBM Verify On-Behalf-Of tokens) across multi-agent delegation chains for auditing and compliance. |
+| **📈 Distributed Tracing & Causal Observability** | OTel Collector (:4318) $\rightarrow$ Grafana Tempo (:3200) | End-to-end trace correlation across user requests, master orchestrator planning, concurrent sub-agents, MCP sidecars, and LLM inference. |
+| **🚪 Secure Egress via Terminating Gateway** | Terminating Gateway (:10002) | Bridges internal mesh agents to external, non-meshed SaaS/GDS APIs (e.g. car rental or airline partner networks) with mTLS termination and credential injection. |
+| **👤 Human-in-the-Loop (HITL) Governance** | Experience UI (:3000) + Review Backend | Enforces corporate travel compliance policies, manager authorization gates, and per-diem budget verification before issuing binding reservations. |
 
-3. **MCP Tool Ecosystem (`:8082`, `:8083`, `:8084`, `:8088`)**:
-   * Model Context Protocol tools for hotel search/reservation, flight availability/ticketing, and weather conditions.
-   * **External Travel Partner MCP** sitting outside the mesh, secured via the **Terminating Gateway** with Vault credential injection.
+---
 
-4. **`travel-igw` (Envoy AI Gateway `:10001`)**:
-   * Sub-millisecond token rate limiting (TPM/RPM protection).
-   * Proxy-layer Vault API key injection for LLM backends.
-   * Dynamic multi-provider routing (OpenAI $\leftrightarrow$ Anthropic).
+## 🎬 End-to-End Customer Demo Flow
 
-5. **AI Observability & INDIGO Engine (`:4318`, `:8089`)**:
-   * OpenTelemetry trace collection and span relay across multi-agent boundaries.
-   * INDIGO compliance audit engine verifying per-diem rules and token security.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Traveler (Alex Mercer)
+    participant UI as Experience UI (:3000)
+    participant APIGW as api-gw (:10000)
+    participant Orch as travel-orchestrator (:8080)
+    participant SubAgents as booking & weather agents
+    participant MCP as MCP Tool Sidecars
+    participant AIGW as travel-igw (:10001)
+    participant LLM as Foundation Model (:8081)
+    participant OTel as otel-collector (:4318)
+    participant Tempo as Grafana Tempo (:3200)
+
+    User->>UI: 1. Select scenario ("San Francisco - $2,500") & Click "Orchestrate"
+    UI->>APIGW: 2. POST /api/travel/plan (with IBM Verify OBO Header)
+    APIGW->>Orch: 3. Route to Master Orchestrator via Consul mTLS
+    par Concurrent Tool Discovery
+        Orch->>SubAgents: 4a. Query flights, hotels, and climate advisory
+        SubAgents->>MCP: 4b. Execute MCP Tools (hotel-mcp, flight-mcp, external-mcp)
+    end
+    Orch->>AIGW: 5. Prompt for Executive Synthesis
+    AIGW->>LLM: 6. Inject Vault API Key & Forward Prompt
+    LLM-->>AIGW: 7. Return Reasoning & Dynamic Token Counts
+    Orch->>OTel: 8. Emit GenAI OTel Spans
+    OTel->>Tempo: 9. Ingest Multi-Span Execution Hierarchy
+    Orch-->>UI: 10. Return Synthesized Itinerary & Live Telemetry
+    User->>UI: 11. Review Itinerary & Click "Approve (HITL)"
+    User->>Tempo: 12. Click "Grafana Tempo" to inspect execution waterfall
+```
+
+---
+
+## 🌐 Live OpenShift Endpoints
+
+| Component | OpenShift Route URL | Description |
+| :--- | :--- | :--- |
+| **CAMP Experience UI** | 🔗 [https://camp-experience-ui-camp-travel.apps.rosa.cluster2.s5az.p3.openshiftapps.com](https://camp-experience-ui-camp-travel.apps.rosa.cluster2.s5az.p3.openshiftapps.com) | Interactive Traveler Workspace & HITL Review |
+| **Grafana Tempo Traces** | 🔗 [https://camp-grafana-camp-travel.apps.rosa.cluster2.s5az.p3.openshiftapps.com/explore](https://camp-grafana-camp-travel.apps.rosa.cluster2.s5az.p3.openshiftapps.com/explore) | Distributed Tracing & Span Waterfall Inspection |
+| **Ingress API Gateway** | 🔗 [https://camp-api-gw-camp-travel.apps.rosa.cluster2.s5az.p3.openshiftapps.com](https://camp-api-gw-camp-travel.apps.rosa.cluster2.s5az.p3.openshiftapps.com) | Mesh Ingress Entry Point |
+| **Consul Enterprise UI** | 🔗 [https://consul-ui-consul.apps.rosa.cluster2.s5az.p3.openshiftapps.com](https://consul-ui-consul.apps.rosa.cluster2.s5az.p3.openshiftapps.com) | Service Mesh Topology, Catalog & mTLS Intentions |
 
 ---
 
@@ -105,7 +142,7 @@ helm upgrade --install camp-travel ./helm/camp-travel \
   --create-namespace
 ```
 
-### Inspect Live Resources
+### Inspect Live Mesh Pods
 ```bash
 oc get pods -n camp-travel
 oc get routes -n camp-travel
@@ -148,13 +185,14 @@ PYTHONPATH=. pytest tests/test_camp_travel.py -v
 ├── helm/camp-travel/           # Production Helm Chart (OpenShift / Kubernetes)
 │   ├── Chart.yaml
 │   ├── values.yaml
-│   └── templates/              # ConfigMaps, ServiceAccounts, Deployments, Services, CRDs, Routes
+│   ├── files/index.html        # Packaged UI Single Page Application
+│   └── templates/              # Deployments, Services, ConfigMaps, Tempo, Grafana, Routes
 │
 ├── observability/              # AI Governance & Trace Ingestion
-│   ├── otel/                   # OpenTelemetry Collector & Span Relay
+│   ├── otel/                   # OpenTelemetry Collector & Span Relay (GenAI Semantic Conventions)
 │   └── indigo/                 # INDIGO Analytic Engine
 │
-├── llm_backend/                # Foundation Model / Ollama mock (:8081)
+├── llm_backend/                # Foundation Model Server with Dynamic Token Engine (:8081)
 ├── tests/test_camp_travel.py   # Automated pytest regression suite
 ├── docker-compose.yml          # Local container development definition
 └── requirements.txt
