@@ -1,0 +1,133 @@
+# ---------------------------------------------------------------------------
+# Consul 2.1 Service Mesh & CAMP Agentic Fabric Configuration Entries
+# ---------------------------------------------------------------------------
+
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.experienceUI.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.apiGw.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.orchestrator.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.bookingAgent.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.weatherAgent.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.hotelMcp.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.flightMcp.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.weatherMcp.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.travelIgw.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.llmBackend.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.terminatingGw.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.otelCollector.name }}
+spec:
+  protocol: http
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: {{ .Values.indigoAnalytics.name }}
+spec:
+  protocol: http
+---
+# Service Intentions (Explicit Zero-Trust Mesh Authorization Rules)
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: allow-camp-mesh-traffic
+spec:
+  destination:
+    name: '*'
+  sources:
+    - name: '*'
+      action: allow
+---
+# Dynamic ServiceRoute for Multi-Provider AI Model Access on travel-igw
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceRoute
+metadata:
+  name: travel-igw-llm-router
+spec:
+  destination:
+    name: {{ .Values.travelIgw.name }}
+  routes:
+    - match:
+        http:
+          pathExact: /v1/chat/completions
+      destination:
+        service: {{ .Values.llmBackend.name }}
+        requestHeaders:
+          set:
+            Authorization: "Bearer vault:secret/data/ai/llm#api_key_sk_99201"
+            x-routed-by: "consul-2.1-camp-mesh"
+    - match:
+        http:
+          pathExact: /v1/messages
+      destination:
+        service: {{ .Values.llmBackend.name }}
+        requestHeaders:
+          set:
+            Authorization: "Bearer vault:secret/data/ai/anthropic#api_key_ant_8820"

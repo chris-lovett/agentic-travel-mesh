@@ -1,0 +1,142 @@
+global:
+  datacenter: dc1
+  domain: consul
+
+# Container image defaults
+images:
+  python: "docker.io/library/python:3.11-slim"
+  envoy: "docker.io/envoyproxy/envoy:v1.31.0"
+
+# OpenShift route / Ingress exposure
+ingress:
+  enabled: true
+  openShiftRoute: true
+
+# 1. Experience UI & Review Backend
+experienceUI:
+  name: experience-ui
+  port: 3000
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 2. Ingress API Gateway (Envoy)
+apiGw:
+  name: api-gw
+  port: 10000
+  adminPort: 9900
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 3. Travel Orchestrator Agent
+orchestrator:
+  name: travel-orchestrator
+  port: 8080
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 4. Booking Sub-Agent
+bookingAgent:
+  name: booking-agent
+  port: 8086
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 5. Weather Sub-Agent
+weatherAgent:
+  name: weather-agent
+  port: 8087
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 6. Hotel MCP Tool
+hotelMcp:
+  name: hotel-mcp
+  port: 8083
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 7. Flight MCP Tool
+flightMcp:
+  name: flight-mcp
+  port: 8084
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 8. Weather MCP Tool
+weatherMcp:
+  name: weather-mcp
+  port: 8082
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 9. travel-igw (Envoy AI Gateway for Model Access)
+travelIgw:
+  name: travel-igw
+  port: 10001
+  adminPort: 9901
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 10. Foundation Model / Ollama Backend
+llmBackend:
+  name: llm-backend
+  port: 8081
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 11. Terminating Gateway (Vault Credential Injection for External MCP)
+terminatingGw:
+  name: terminating-gw
+  port: 10002
+  adminPort: 9902
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 12. External MCP Server
+externalMcp:
+  name: external-mcp
+  port: 8088
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 13. AI Observability: OpenTelemetry Collector & Span Relay
+otelCollector:
+  name: otel-collector
+  port: 4318
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }
+
+# 14. INDIGO Analytic Engine
+indigoAnalytics:
+  name: indigo-analytics
+  port: 8089
+  replicaCount: 1
+  resources:
+    limits: { cpu: "500m", memory: "512Mi" }
+    requests: { cpu: "100m", memory: "128Mi" }

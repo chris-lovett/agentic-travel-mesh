@@ -1,0 +1,35 @@
+{{- if .Values.ingress.enabled }}
+{{- if .Values.ingress.openShiftRoute }}
+apiVersion: route.route.openshift.io/v1
+kind: Route
+metadata:
+  name: camp-experience-ui
+  labels: { app: {{ .Values.experienceUI.name }} }
+spec:
+  to:
+    kind: Service
+    name: {{ .Values.experienceUI.name }}
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.route.openshift.io/v1
+kind: Route
+metadata:
+  name: camp-api-gw
+  labels: { app: {{ .Values.apiGw.name }} }
+spec:
+  to:
+    kind: Service
+    name: {{ .Values.apiGw.name }}
+    weight: 100
+  port:
+    targetPort: gateway
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}
+{{- end }}

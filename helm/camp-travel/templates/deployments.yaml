@@ -1,0 +1,517 @@
+# 1. Experience UI & Review Backend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.experienceUI.name }}
+  labels: { app: {{ .Values.experienceUI.name }} }
+spec:
+  replicas: {{ .Values.experienceUI.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.experienceUI.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.experienceUI.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.experienceUI.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.experienceUI.port }}"
+        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.apiGw.name }}:10000, {{ .Values.bookingAgent.name }}:8086"
+    spec:
+      serviceAccountName: {{ .Values.experienceUI.name }}
+      containers:
+        - name: experience-ui
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/frontend_main.py:app --host 0.0.0.0 --port 3000"]
+          ports: [{ name: http, containerPort: 3000 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+            - name: html-ui
+              mountPath: /app/static
+          resources:
+            {{- toYaml .Values.experienceUI.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }
+        - name: html-ui
+          configMap: { name: camp-ui-html }
+
+---
+# 2. Ingress API Gateway (Envoy)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.apiGw.name }}
+  labels: { app: {{ .Values.apiGw.name }} }
+spec:
+  replicas: {{ .Values.apiGw.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.apiGw.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.apiGw.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.apiGw.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.apiGw.port }}"
+    spec:
+      serviceAccountName: {{ .Values.apiGw.name }}
+      containers:
+        - name: api-gw
+          image: {{ .Values.images.envoy }}
+          command: ["envoy"]
+          args: ["-c", "/etc/envoy/api_gw.yaml", "--log-level", "info"]
+          ports:
+            - { name: gateway, containerPort: 10000 }
+            - { name: admin, containerPort: 9900 }
+          volumeMounts:
+            - name: envoy-configs
+              mountPath: /etc/envoy
+          resources:
+            {{- toYaml .Values.apiGw.resources | nindent 12 }}
+      volumes:
+        - name: envoy-configs
+          configMap: { name: camp-gateway-configs }
+
+---
+# 3. Travel Orchestrator Agent
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.orchestrator.name }}
+  labels: { app: {{ .Values.orchestrator.name }} }
+spec:
+  replicas: {{ .Values.orchestrator.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.orchestrator.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.orchestrator.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.orchestrator.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.orchestrator.port }}"
+        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.bookingAgent.name }}:8086, {{ .Values.weatherAgent.name }}:8087, {{ .Values.travelIgw.name }}:10001, {{ .Values.otelCollector.name }}:4318"
+    spec:
+      serviceAccountName: {{ .Values.orchestrator.name }}
+      containers:
+        - name: orchestrator
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/orchestrator_main.py:app --host 0.0.0.0 --port 8080"]
+          ports: [{ name: http, containerPort: 8080 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.orchestrator.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }
+
+---
+# 4. Booking Sub-Agent
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.bookingAgent.name }}
+  labels: { app: {{ .Values.bookingAgent.name }} }
+spec:
+  replicas: {{ .Values.bookingAgent.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.bookingAgent.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.bookingAgent.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.bookingAgent.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.bookingAgent.port }}"
+        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.hotelMcp.name }}:8083, {{ .Values.flightMcp.name }}:8084, {{ .Values.terminatingGw.name }}:10002"
+    spec:
+      serviceAccountName: {{ .Values.bookingAgent.name }}
+      containers:
+        - name: booking-agent
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/booking_agent_main.py:app --host 0.0.0.0 --port 8086"]
+          ports: [{ name: http, containerPort: 8086 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.bookingAgent.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }
+
+---
+# 5. Weather Sub-Agent
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.weatherAgent.name }}
+  labels: { app: {{ .Values.weatherAgent.name }} }
+spec:
+  replicas: {{ .Values.weatherAgent.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.weatherAgent.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.weatherAgent.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.weatherAgent.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.weatherAgent.port }}"
+        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.weatherMcp.name }}:8082, {{ .Values.travelIgw.name }}:10001"
+    spec:
+      serviceAccountName: {{ .Values.weatherAgent.name }}
+      containers:
+        - name: weather-agent
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/weather_agent_main.py:app --host 0.0.0.0 --port 8087"]
+          ports: [{ name: http, containerPort: 8087 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.weatherAgent.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }
+
+---
+# 6. Hotel MCP Tool
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.hotelMcp.name }}
+  labels: { app: {{ .Values.hotelMcp.name }} }
+spec:
+  replicas: {{ .Values.hotelMcp.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.hotelMcp.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.hotelMcp.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.hotelMcp.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.hotelMcp.port }}"
+    spec:
+      serviceAccountName: {{ .Values.hotelMcp.name }}
+      containers:
+        - name: hotel-mcp
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/hotel_mcp_main.py:app --host 0.0.0.0 --port 8083"]
+          ports: [{ name: http, containerPort: 8083 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.hotelMcp.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }
+
+---
+# 7. Flight MCP Tool
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.flightMcp.name }}
+  labels: { app: {{ .Values.flightMcp.name }} }
+spec:
+  replicas: {{ .Values.flightMcp.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.flightMcp.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.flightMcp.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.flightMcp.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.flightMcp.port }}"
+    spec:
+      serviceAccountName: {{ .Values.flightMcp.name }}
+      containers:
+        - name: flight-mcp
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/flight_mcp_main.py:app --host 0.0.0.0 --port 8084"]
+          ports: [{ name: http, containerPort: 8084 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.flightMcp.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }
+
+---
+# 8. Weather MCP Tool
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.weatherMcp.name }}
+  labels: { app: {{ .Values.weatherMcp.name }} }
+spec:
+  replicas: {{ .Values.weatherMcp.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.weatherMcp.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.weatherMcp.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.weatherMcp.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.weatherMcp.port }}"
+    spec:
+      serviceAccountName: {{ .Values.weatherMcp.name }}
+      containers:
+        - name: weather-mcp
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/weather_mcp_main.py:app --host 0.0.0.0 --port 8082"]
+          ports: [{ name: http, containerPort: 8082 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.weatherMcp.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }
+
+---
+# 9. travel-igw (Envoy AI Gateway)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.travelIgw.name }}
+  labels: { app: {{ .Values.travelIgw.name }} }
+spec:
+  replicas: {{ .Values.travelIgw.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.travelIgw.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.travelIgw.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.travelIgw.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.travelIgw.port }}"
+    spec:
+      serviceAccountName: {{ .Values.travelIgw.name }}
+      containers:
+        - name: travel-igw
+          image: {{ .Values.images.envoy }}
+          command: ["envoy"]
+          args: ["-c", "/etc/envoy/travel_igw.yaml", "--log-level", "info"]
+          ports:
+            - { name: gateway, containerPort: 10001 }
+            - { name: admin, containerPort: 9901 }
+          volumeMounts:
+            - name: envoy-configs
+              mountPath: /etc/envoy
+          resources:
+            {{- toYaml .Values.travelIgw.resources | nindent 12 }}
+      volumes:
+        - name: envoy-configs
+          configMap: { name: camp-gateway-configs }
+
+---
+# 10. Foundation Model / Ollama Backend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.llmBackend.name }}
+  labels: { app: {{ .Values.llmBackend.name }} }
+spec:
+  replicas: {{ .Values.llmBackend.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.llmBackend.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.llmBackend.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.llmBackend.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.llmBackend.port }}"
+    spec:
+      serviceAccountName: {{ .Values.llmBackend.name }}
+      containers:
+        - name: llm-backend
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/llm_backend_main.py:app --host 0.0.0.0 --port 8081"]
+          ports: [{ name: http, containerPort: 8081 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.llmBackend.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }
+
+---
+# 11. Terminating Gateway (Vault Credential Injection)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.terminatingGw.name }}
+  labels: { app: {{ .Values.terminatingGw.name }} }
+spec:
+  replicas: {{ .Values.terminatingGw.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.terminatingGw.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.terminatingGw.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.terminatingGw.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.terminatingGw.port }}"
+    spec:
+      serviceAccountName: {{ .Values.terminatingGw.name }}
+      containers:
+        - name: terminating-gw
+          image: {{ .Values.images.envoy }}
+          command: ["envoy"]
+          args: ["-c", "/etc/envoy/terminating_gw.yaml", "--log-level", "info"]
+          ports:
+            - { name: gateway, containerPort: 10002 }
+            - { name: admin, containerPort: 9902 }
+          volumeMounts:
+            - name: envoy-configs
+              mountPath: /etc/envoy
+          resources:
+            {{- toYaml .Values.terminatingGw.resources | nindent 12 }}
+      volumes:
+        - name: envoy-configs
+          configMap: { name: camp-gateway-configs }
+
+---
+# 12. External MCP Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.externalMcp.name }}
+  labels: { app: {{ .Values.externalMcp.name }} }
+spec:
+  replicas: {{ .Values.externalMcp.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.externalMcp.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.externalMcp.name }} }
+    spec:
+      serviceAccountName: {{ .Values.externalMcp.name }}
+      containers:
+        - name: external-mcp
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/external_mcp_main.py:app --host 0.0.0.0 --port 8088"]
+          ports: [{ name: http, containerPort: 8088 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.externalMcp.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }
+
+---
+# 13. OpenTelemetry Collector & Span Relay
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.otelCollector.name }}
+  labels: { app: {{ .Values.otelCollector.name }} }
+spec:
+  replicas: {{ .Values.otelCollector.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.otelCollector.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.otelCollector.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.otelCollector.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.otelCollector.port }}"
+    spec:
+      serviceAccountName: {{ .Values.otelCollector.name }}
+      containers:
+        - name: otel-collector
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/otel_collector_main.py:app --host 0.0.0.0 --port 4318"]
+          ports: [{ name: http, containerPort: 4318 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.otelCollector.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }
+
+---
+# 14. INDIGO Analytic Engine
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.indigoAnalytics.name }}
+  labels: { app: {{ .Values.indigoAnalytics.name }} }
+spec:
+  replicas: {{ .Values.indigoAnalytics.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.indigoAnalytics.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.indigoAnalytics.name }} }
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service: "{{ .Values.indigoAnalytics.name }}"
+        consul.hashicorp.com/connect-service-port: "{{ .Values.indigoAnalytics.port }}"
+    spec:
+      serviceAccountName: {{ .Values.indigoAnalytics.name }}
+      containers:
+        - name: indigo-analytics
+          image: {{ .Values.images.python }}
+          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/indigo_analytics_main.py:app --host 0.0.0.0 --port 8089"]
+          ports: [{ name: http, containerPort: 8089 }]
+          volumeMounts:
+            - name: python-code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.indigoAnalytics.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: python-code
+          configMap: { name: camp-python-sources }

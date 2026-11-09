@@ -1,0 +1,156 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.experienceUI.name }}
+  labels: { app: {{ .Values.experienceUI.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.experienceUI.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.experienceUI.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.apiGw.name }}
+  labels: { app: {{ .Values.apiGw.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.apiGw.port }}, targetPort: gateway, name: gateway }
+    - { port: {{ .Values.apiGw.adminPort }}, targetPort: admin, name: admin }
+  selector: { app: {{ .Values.apiGw.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.orchestrator.name }}
+  labels: { app: {{ .Values.orchestrator.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.orchestrator.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.orchestrator.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.bookingAgent.name }}
+  labels: { app: {{ .Values.bookingAgent.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.bookingAgent.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.bookingAgent.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.weatherAgent.name }}
+  labels: { app: {{ .Values.weatherAgent.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.weatherAgent.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.weatherAgent.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.hotelMcp.name }}
+  labels: { app: {{ .Values.hotelMcp.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.hotelMcp.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.hotelMcp.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.flightMcp.name }}
+  labels: { app: {{ .Values.flightMcp.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.flightMcp.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.flightMcp.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.weatherMcp.name }}
+  labels: { app: {{ .Values.weatherMcp.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.weatherMcp.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.weatherMcp.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.travelIgw.name }}
+  labels: { app: {{ .Values.travelIgw.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.travelIgw.port }}, targetPort: gateway, name: gateway }
+    - { port: {{ .Values.travelIgw.adminPort }}, targetPort: admin, name: admin }
+  selector: { app: {{ .Values.travelIgw.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.llmBackend.name }}
+  labels: { app: {{ .Values.llmBackend.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.llmBackend.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.llmBackend.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.terminatingGw.name }}
+  labels: { app: {{ .Values.terminatingGw.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.terminatingGw.port }}, targetPort: gateway, name: gateway }
+    - { port: {{ .Values.terminatingGw.adminPort }}, targetPort: admin, name: admin }
+  selector: { app: {{ .Values.terminatingGw.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.externalMcp.name }}
+  labels: { app: {{ .Values.externalMcp.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.externalMcp.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.externalMcp.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.otelCollector.name }}
+  labels: { app: {{ .Values.otelCollector.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.otelCollector.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.otelCollector.name }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.indigoAnalytics.name }}
+  labels: { app: {{ .Values.indigoAnalytics.name }} }
+spec:
+  type: ClusterIP
+  ports:
+    - { port: {{ .Values.indigoAnalytics.port }}, targetPort: http, name: http }
+  selector: { app: {{ .Values.indigoAnalytics.name }} }

@@ -1,0 +1,61 @@
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9902
+
+static_resources:
+  listeners:
+  - name: terminating_gw_listener
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 10002
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: terminating_gw
+          codec_type: AUTO
+          route_config:
+            name: terminating_routes
+            virtual_hosts:
+            - name: egress_vhost
+              domains: ["*"]
+              routes:
+              - match:
+                  prefix: "/external/mcp"
+                route:
+                  cluster: external_mcp_cluster
+                  timeout: 10s
+                request_headers_to_add:
+                  # Vault Credential Injection for External Partner Tools
+                  - header:
+                      key: "Authorization"
+                      value: "Bearer vault:secret/data/partners/amadeus#gds_token_9918"
+                    append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                  - header:
+                      key: "x-egress-gateway"
+                      value: "consul-terminating-gw-2.1"
+                    append_action: OVERWRITE_IF_EXISTS_OR_ADD
+
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+  - name: external_mcp_cluster
+    connect_timeout: 1s
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: external_mcp_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: external-mcp
+                port_value: 8088

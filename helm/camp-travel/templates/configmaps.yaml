@@ -1,0 +1,853 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: camp-python-sources
+data:
+  requirements.txt: |
+    fastapi>=0.110.0
+    uvicorn[standard]>=0.28.0
+    httpx>=0.27.0
+    pydantic>=2.6.0
+    jinja2>=3.1.3
+
+  frontend_main.py: |
+    from fastapi import FastAPI, Request, HTTPException, status
+    from fastapi.responses import HTMLResponse
+    from pydantic import BaseModel
+    from typing import Dict, Any, List, Optional
+    import httpx, os, time
+
+    app = FastAPI(title="CAMP Experience UI & Review Backend")
+
+    API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://localhost:10000")
+    BOOKING_AGENT_URL = os.getenv("BOOKING_AGENT_URL", "http://localhost:8086")
+
+    trips_database: Dict[str, Any] = {}
+    audit_events: List[Dict[str, Any]] = []
+
+    class UserTripSubmission(BaseModel):
+        user_id: str = "traveler-101"
+        user_name: str = "Alex Mercer"
+        origin: str = "JFK"
+        destination: str = "San Francisco"
+        duration_days: int = 4
+        budget_usd: float = 2500.0
+        trip_purpose: str = "HashiCorp & AI Architecture Summit"
+        notes: Optional[str] = "Prefer hotels with business center"
+
+    class ApprovalAction(BaseModel):
+        trip_id: str
+        action: str
+        approver: str = "Manager / Finance Compliance"
+
+    @app.get("/", response_class=HTMLResponse)
+    async def serve_ui():
+        with open("/app/static/index.html", "r") as f:
+            return f.read()
+
+    @app.post("/api/travel/plan")
+    async def plan_trip(submission: UserTripSubmission):
+        headers = {
+            "x-obo-user-id": submission.user_id,
+            "x-obo-token": f"obo-{submission.user_id}",
+            "x-tenant-id": "corporate-travel",
+        }
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                f"{API_GATEWAY_URL}/agent/orchestrate/trip",
+                json={
+                    "traveler_name": submission.user_name,
+                    "origin": submission.origin,
+                    "destination": submission.destination,
+                    "duration_days": submission.duration_days,
+                    "budget_usd": submission.budget_usd,
+                    "trip_purpose": submission.trip_purpose,
+                    "special_notes": submission.notes,
+                },
+                headers=headers,
+            )
+            plan_data = resp.json()
+
+        trip_id = plan_data.get("trip_id", f"TRIP-{int(time.time())}")
+        trips_database[trip_id] = plan_data
+        audit_events.append({
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "event": "TRIP_PLAN_GENERATED",
+            "trip_id": trip_id,
+            "traveler": submission.user_name,
+            "destination": submission.destination,
+            "cost_usd": plan_data.get("total_estimated_usd"),
+            "trace_id": plan_data.get("trace_id"),
+        })
+        return plan_data
+
+    @app.post("/api/travel/review-action")
+    async def review_action(action: ApprovalAction):
+        trip = trips_database.get(action.trip_id)
+        if not trip:
+            raise HTTPException(status_code=404, detail="Trip proposal not found")
+
+        if action.action == "APPROVE":
+            booking_proposal = trip.get("booking_proposals", {})
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                conf_resp = await client.post(
+                    f"{BOOKING_AGENT_URL}/agent/booking/confirm",
+                    json={
+                        "traveler_name": trip.get("traveler"),
+                        "nights": trip.get("duration_days"),
+                        "flight": booking_proposal.get("selected_flight"),
+                        "hotel": booking_proposal.get("selected_hotel"),
+                        "ground_transport": booking_proposal.get("ground_transport"),
+                    },
+                )
+                confirmation_data = conf_resp.json()
+
+            trip["status"] = "APPROVED_AND_BOOKED"
+            trip["confirmation_details"] = confirmation_data
+            result_message = "Trip itinerary approved. All flight, hotel, and transport reservations confirmed via MCP tools."
+        else:
+            trip["status"] = "REJECTED_BY_REVIEWER"
+            result_message = "Trip proposal rejected."
+
+        audit_events.append({
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "event": f"TRIP_{action.action}D",
+            "trip_id": action.trip_id,
+            "approver": action.approver,
+        })
+        return {
+            "trip_id": action.trip_id,
+            "status": trip["status"],
+            "message": result_message,
+            "details": trip.get("confirmation_details"),
+        }
+
+    @app.get("/api/travel/audit-stream")
+    async def get_audit_stream():
+        return {"audit_events": list(reversed(audit_events[-20:]))}
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "experience-ui"}
+
+  orchestrator_main.py: |
+    from fastapi import FastAPI, Request
+    from pydantic import BaseModel
+    from typing import Dict, Any, Optional
+    import httpx, os, asyncio, time
+
+    app = FastAPI(title="CAMP Travel Orchestrator")
+
+    BOOKING_AGENT_URL = os.getenv("BOOKING_AGENT_URL", "http://localhost:8086")
+    WEATHER_AGENT_URL = os.getenv("WEATHER_AGENT_URL", "http://localhost:8087")
+    TRAVEL_IGW_URL = os.getenv("TRAVEL_IGW_URL", "http://localhost:10001")
+    OTEL_COLLECTOR_URL = os.getenv("OTEL_COLLECTOR_URL", "http://localhost:4318")
+
+    class TripRequest(BaseModel):
+        traveler_name: str = "Alex Mercer"
+        origin: str = "JFK"
+        destination: str = "San Francisco"
+        duration_days: int = 4
+        budget_usd: float = 2500.0
+        trip_purpose: str = "Annual HashiCorp & AI Architecture Summit"
+        special_notes: Optional[str] = "Prefer hotels with business centers"
+
+    @app.post("/agent/orchestrate/trip")
+    async def orchestrate_trip(req: TripRequest, request: Request):
+        trace_id = f"trace-camp-{int(time.time()*1000)}"
+        obo_user = request.headers.get("x-obo-user-id", req.traveler_name.lower().replace(" ", "-"))
+        headers = {
+            "x-trace-id": trace_id,
+            "x-obo-user-id": obo_user,
+            "x-tenant-id": "corporate-travel",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            w_task = client.post(
+                f"{WEATHER_AGENT_URL}/agent/weather/analyze",
+                json={"destination": req.destination, "duration_days": req.duration_days, "trip_type": req.trip_purpose},
+                headers=headers,
+            )
+            b_task = client.post(
+                f"{BOOKING_AGENT_URL}/agent/booking/plan",
+                json={
+                    "origin": req.origin,
+                    "destination": req.destination,
+                    "traveler_name": req.traveler_name,
+                    "nights": req.duration_days,
+                    "budget_usd": req.budget_usd,
+                    "needs_ground_transport": True,
+                },
+                headers=headers,
+            )
+            w_res, b_res = await asyncio.gather(w_task, b_task)
+            weather_data = w_res.json()
+            booking_data = b_res.json()
+
+            prompt = f"Traveler: {req.traveler_name}, Destination: {req.destination}, Cost: ${booking_data.get('total_estimated_usd')}, Weather: {weather_data.get('forecast_summary')}. Write 3-sentence summary."
+            try:
+                llm_resp = await client.post(
+                    f"{TRAVEL_IGW_URL}/v1/chat/completions",
+                    json={"model": "gpt-4o", "messages": [{"role": "user", "content": prompt}]},
+                    headers={**headers, "Content-Type": "application/json"},
+                )
+                summary = llm_resp.json()["choices"][0]["message"]["content"]
+            except Exception:
+                summary = f"Itinerary prepared for {req.destination} with {req.duration_days} nights lodging, flights, and transport at ${booking_data.get('total_estimated_usd')}."
+
+            try:
+                await client.post(
+                    f"{OTEL_COLLECTOR_URL}/v1/traces",
+                    json={
+                        "trace_id": trace_id,
+                        "service": "travel-orchestrator",
+                        "user_obo": obo_user,
+                        "tokens_used": 65,
+                        "destination": req.destination,
+                        "cost_usd": booking_data.get("total_estimated_usd"),
+                    },
+                    headers=headers,
+                )
+            except Exception:
+                pass
+
+        return {
+            "status": "plan_ready_for_review",
+            "trace_id": trace_id,
+            "trip_id": f"TRIP-{int(time.time())}",
+            "traveler": req.traveler_name,
+            "destination": req.destination,
+            "duration_days": req.duration_days,
+            "budget_usd": req.budget_usd,
+            "total_estimated_usd": booking_data.get("total_estimated_usd"),
+            "within_budget": booking_data.get("within_budget"),
+            "executive_summary": summary,
+            "weather_advisory": weather_data,
+            "booking_proposals": booking_data,
+            "requires_hitl_approval": True,
+        }
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "travel-orchestrator"}
+
+  booking_agent_main.py: |
+    from fastapi import FastAPI, Request
+    from pydantic import BaseModel
+    from typing import Dict, Any, List, Optional
+    import httpx, os
+
+    app = FastAPI(title="CAMP Booking Agent")
+
+    HOTEL_MCP_URL = os.getenv("HOTEL_MCP_URL", "http://localhost:8083")
+    FLIGHT_MCP_URL = os.getenv("FLIGHT_MCP_URL", "http://localhost:8084")
+    TERMINATING_GW_URL = os.getenv("TERMINATING_GW_URL", "http://localhost:10002")
+
+    class BookingPlanRequest(BaseModel):
+        origin: str = "JFK"
+        destination: str = "SFO"
+        traveler_name: str = "Alex Mercer"
+        nights: int = 4
+        budget_usd: float = 2500.0
+        needs_ground_transport: bool = True
+
+    @app.post("/agent/booking/plan")
+    async def plan_bookings(req: BookingPlanRequest, request: Request):
+        obo_user = request.headers.get("x-obo-user-id", "traveler-101")
+        headers = {"x-obo-user-id": obo_user}
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            flight_resp = await client.post(
+                f"{FLIGHT_MCP_URL}/mcp/flights/search",
+                json={"origin": req.origin, "destination": req.destination},
+                headers=headers,
+            )
+            flights = flight_resp.json().get("available_flights", [])
+            selected_flight = flights[0] if flights else {}
+
+            hotel_resp = await client.post(
+                f"{HOTEL_MCP_URL}/mcp/hotels/search",
+                json={"destination": req.destination, "max_budget_per_night": req.budget_usd / (req.nights + 1)},
+                headers=headers,
+            )
+            hotels = hotel_resp.json().get("available_hotels", [])
+            selected_hotel = hotels[0] if hotels else {}
+
+            ground_transport = None
+            if req.needs_ground_transport:
+                try:
+                    car_resp = await client.post(
+                        f"{TERMINATING_GW_URL}/external/mcp/ground-transport",
+                        json={"destination": req.destination, "rental_days": req.nights},
+                        headers=headers,
+                    )
+                    ground_transport = car_resp.json()
+                except Exception as e:
+                    ground_transport = {"status": "unavailable", "detail": str(e)}
+
+        flight_cost = selected_flight.get("price_usd", 0.0)
+        hotel_cost = selected_hotel.get("price_per_night", 0.0) * req.nights
+        car_cost = ground_transport.get("total_amount_usd", 0.0) if ground_transport and "total_amount_usd" in ground_transport else 0.0
+        total_estimated = flight_cost + hotel_cost + car_cost
+
+        return {
+            "agent": "booking-agent",
+            "traveler": req.traveler_name,
+            "origin": req.origin,
+            "destination": req.destination,
+            "nights": req.nights,
+            "selected_flight": selected_flight,
+            "selected_hotel": selected_hotel,
+            "ground_transport": ground_transport,
+            "total_estimated_usd": round(total_estimated, 2),
+            "within_budget": total_estimated <= req.budget_usd,
+        }
+
+    @app.post("/agent/booking/confirm")
+    async def confirm_bookings(req: Dict[str, Any], request: Request):
+        traveler = req.get("traveler_name", "Alex Mercer")
+        nights = req.get("nights", 4)
+        flight = req.get("flight", {})
+        hotel = req.get("hotel", {})
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            f_resp = await client.post(
+                f"{FLIGHT_MCP_URL}/mcp/flights/reserve",
+                json={
+                    "flight_number": flight.get("flight_number", "UA-442"),
+                    "passenger_name": traveler,
+                    "origin": flight.get("origin", "JFK"),
+                    "destination": flight.get("destination", "SFO"),
+                },
+            )
+            flight_confirmation = f_resp.json()
+
+            h_resp = await client.post(
+                f"{HOTEL_MCP_URL}/mcp/hotels/reserve",
+                json={
+                    "hotel_id": hotel.get("id", "HTL-SF-01"),
+                    "guest_name": traveler,
+                    "nights": nights,
+                },
+            )
+            hotel_confirmation = h_resp.json()
+
+        return {
+            "status": "all_reservations_confirmed",
+            "flight_booking": flight_confirmation,
+            "hotel_booking": hotel_confirmation,
+            "ground_transport": req.get("ground_transport"),
+        }
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "booking-agent"}
+
+  weather_agent_main.py: |
+    from fastapi import FastAPI, Request
+    from pydantic import BaseModel
+    import httpx, os
+
+    app = FastAPI(title="CAMP Weather Agent")
+
+    WEATHER_MCP_URL = os.getenv("WEATHER_MCP_URL", "http://localhost:8082")
+    TRAVEL_IGW_URL = os.getenv("TRAVEL_IGW_URL", "http://localhost:10001")
+
+    class WeatherAnalysisRequest(BaseModel):
+        destination: str
+        duration_days: int = 4
+        trip_type: str = "Business Conference"
+
+    @app.post("/agent/weather/analyze")
+    async def analyze_destination_weather(req: WeatherAnalysisRequest, request: Request):
+        obo_user = request.headers.get("x-obo-user-id", "traveler-101")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            mcp_resp = await client.post(
+                f"{WEATHER_MCP_URL}/mcp/weather/forecast",
+                json={"destination": req.destination, "days": req.duration_days},
+            )
+            weather_data = mcp_resp.json()
+
+            try:
+                llm_resp = await client.post(
+                    f"{TRAVEL_IGW_URL}/v1/chat/completions",
+                    json={
+                        "model": "gpt-4o",
+                        "messages": [{"role": "user", "content": f"Summarize weather: {weather_data['summary']}"}],
+                    },
+                    headers={"Content-Type": "application/json", "x-tenant-id": "travel", "x-obo-user-id": obo_user},
+                )
+                ai_notes = llm_resp.json()["choices"][0]["message"]["content"]
+            except Exception:
+                ai_notes = f"Climate is expected to be {weather_data['summary']}."
+
+        return {
+            "agent": "weather-agent",
+            "destination": req.destination,
+            "forecast_summary": weather_data["summary"],
+            "packing_recommendations": weather_data["packing_recommendation"],
+            "daily_breakdown": weather_data["daily_forecast"],
+            "ai_advisory": ai_notes,
+        }
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "weather-agent"}
+
+  hotel_mcp_main.py: |
+    from fastapi import FastAPI
+    from pydantic import BaseModel
+    from typing import Optional
+    import uuid
+
+    app = FastAPI(title="Hotel Booking MCP Server")
+
+    class HotelSearchRequest(BaseModel):
+        destination: str
+        check_in: Optional[str] = "2026-12-01"
+        check_out: Optional[str] = "2026-12-05"
+        max_budget_per_night: Optional[float] = 400.0
+
+    class HotelBookingRequest(BaseModel):
+        hotel_id: str
+        guest_name: str
+        nights: int = 4
+
+    HOTEL_CATALOG = [
+        {"id": "HTL-SF-01", "name": "The Westin St. Francis", "city": "San Francisco", "price_per_night": 289.0, "rating": 4.6},
+        {"id": "HTL-SF-02", "name": "Palace Hotel San Francisco", "city": "San Francisco", "price_per_night": 349.0, "rating": 4.8},
+        {"id": "HTL-NY-01", "name": "The Langham Fifth Avenue", "city": "New York", "price_per_night": 450.0, "rating": 4.9},
+        {"id": "HTL-LON-01", "name": "The Savoy London", "city": "London", "price_per_night": 395.0, "rating": 4.8},
+        {"id": "HTL-GEN-01", "name": "Grand Hyatt Central", "city": "General", "price_per_night": 220.0, "rating": 4.5},
+    ]
+
+    @app.post("/mcp/hotels/search")
+    async def search_hotels(req: HotelSearchRequest):
+        dest = req.destination.strip().lower()
+        matches = [h for h in HOTEL_CATALOG if dest in h["city"].lower() and h["price_per_night"] <= req.max_budget_per_night]
+        if not matches:
+            matches = [HOTEL_CATALOG[-1]]
+        return {"mcp_tool": "hotel_booking", "destination": req.destination, "available_hotels": matches}
+
+    @app.post("/mcp/hotels/reserve")
+    async def reserve_hotel(req: HotelBookingRequest):
+        hotel = next((h for h in HOTEL_CATALOG if h["id"] == req.hotel_id), HOTEL_CATALOG[0])
+        return {
+            "mcp_tool": "hotel_booking",
+            "status": "confirmed",
+            "booking_reference": f"HTL-CONF-{uuid.uuid4().hex[:8].upper()}",
+            "hotel_name": hotel["name"],
+            "city": hotel["city"],
+            "nights": req.nights,
+            "total_amount_usd": hotel["price_per_night"] * req.nights,
+            "guest_name": req.guest_name,
+        }
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "hotel-mcp"}
+
+  flight_mcp_main.py: |
+    from fastapi import FastAPI
+    from pydantic import BaseModel
+    import uuid
+
+    app = FastAPI(title="Flight Booking MCP Server")
+
+    class FlightSearchRequest(BaseModel):
+        origin: str = "JFK"
+        destination: str = "SFO"
+
+    class FlightBookingRequest(BaseModel):
+        flight_number: str
+        passenger_name: str
+        origin: str
+        destination: str
+
+    FLIGHT_SCHEDULES = [
+        {"flight_number": "UA-442", "airline": "United Airlines", "origin": "JFK", "destination": "SFO", "departure": "08:30 AM", "arrival": "11:45 AM", "price_usd": 380.0, "duration": "6h 15m"},
+        {"flight_number": "DL-120", "airline": "Delta Air Lines", "origin": "JFK", "destination": "SFO", "departure": "02:15 PM", "arrival": "05:30 PM", "price_usd": 410.0, "duration": "6h 15m"},
+        {"flight_number": "BA-178", "airline": "British Airways", "origin": "JFK", "destination": "LHR", "departure": "07:00 PM", "arrival": "07:00 AM+1", "price_usd": 650.0, "duration": "7h 00m"},
+    ]
+
+    @app.post("/mcp/flights/search")
+    async def search_flights(req: FlightSearchRequest):
+        return {"mcp_tool": "flight_booking", "available_flights": FLIGHT_SCHEDULES}
+
+    @app.post("/mcp/flights/reserve")
+    async def reserve_flight(req: FlightBookingRequest):
+        flight = next((f for f in FLIGHT_SCHEDULES if f["flight_number"] == req.flight_number), FLIGHT_SCHEDULES[0])
+        return {
+            "mcp_tool": "flight_booking",
+            "status": "ticket_confirmed",
+            "pnr": f"PNR-{uuid.uuid4().hex[:6].upper()}",
+            "flight_number": flight["flight_number"],
+            "airline": flight["airline"],
+            "route": f"{flight['origin']} -> {flight['destination']}",
+            "passenger_name": req.passenger_name,
+            "amount_usd": flight["price_usd"],
+        }
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "flight-mcp"}
+
+  weather_mcp_main.py: |
+    from fastapi import FastAPI
+    from pydantic import BaseModel
+    import random
+
+    app = FastAPI(title="Weather MCP Server")
+
+    class WeatherQuery(BaseModel):
+        destination: str
+        days: int = 4
+
+    WEATHER_DATABASE = {
+        "san francisco": {"temp_c": 18, "condition": "Partly Cloudy / Coastal Fog", "precipitation_chance": 15, "packing": "Light layers, light jacket, walking shoes"},
+        "new york": {"temp_c": 22, "condition": "Sunny", "precipitation_chance": 5, "packing": "Comfortable summer/fall attire"},
+        "london": {"temp_c": 15, "condition": "Light Rain / Overcast", "precipitation_chance": 65, "packing": "Waterproof jacket, umbrella"},
+        "tokyo": {"temp_c": 24, "condition": "Clear & Mild", "precipitation_chance": 10, "packing": "Breathable clothing, comfortable sneakers"},
+    }
+
+    @app.post("/mcp/weather/forecast")
+    async def get_weather_forecast(query: WeatherQuery):
+        city_key = query.destination.strip().lower()
+        data = WEATHER_DATABASE.get(city_key, {"temp_c": 21, "condition": "Mild & Clear", "precipitation_chance": 20, "packing": "Standard seasonal attire"})
+        forecast = [{"day": f"Day {d}", "high_c": data["temp_c"] + random.randint(1, 3), "condition": data["condition"]} for d in range(1, query.days + 1)]
+        return {
+            "mcp_tool": "weather_server",
+            "destination": query.destination,
+            "summary": f"{data['condition']}, averaging {data['temp_c']}°C ({int(data['temp_c'] * 9/5 + 32)}°F)",
+            "packing_recommendation": data["packing"],
+            "daily_forecast": forecast,
+        }
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "weather-mcp"}
+
+  llm_backend_main.py: |
+    from fastapi import FastAPI, Request, HTTPException, status
+    from pydantic import BaseModel
+    from typing import List, Optional
+    import time
+
+    app = FastAPI(title="CAMP Foundation Model Service")
+
+    class ChatMessage(BaseModel):
+        role: str
+        content: str
+
+    class ChatCompletionRequest(BaseModel):
+        model: str
+        messages: List[ChatMessage]
+
+    @app.post("/v1/chat/completions")
+    @app.post("/openai/v1/chat/completions")
+    async def chat_completions(req: ChatCompletionRequest, request: Request):
+        auth = request.headers.get("authorization", "")
+        if not auth.startswith("Bearer "):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Vault API key")
+
+        return {
+            "id": f"chatcmpl-{int(time.time()*1000)}",
+            "model": req.model,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": f"[Ollama/OpenAI via travel-igw] Processed reasoning for '{req.model}'. Generated synthesized travel plan."}}],
+            "usage": {"prompt_tokens": 15, "completion_tokens": 30, "total_tokens": 45},
+            "gateway_metadata": {"authenticated_by_vault": True, "gateway_tier": "travel-igw-2.1"},
+        }
+
+    @app.post("/v1/messages")
+    @app.post("/anthropic/v1/messages")
+    async def anthropic_messages(request: Request):
+        return {"id": f"msg-{int(time.time()*1000)}", "content": [{"type": "text", "text": "[Anthropic via travel-igw] Synthesized message response."}], "usage": {"input_tokens": 20, "output_tokens": 25}}
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "llm-backend"}
+
+  external_mcp_main.py: |
+    from fastapi import FastAPI, Request, HTTPException, status
+    from pydantic import BaseModel
+    import uuid
+
+    app = FastAPI(title="External Partner Travel MCP Server")
+
+    class CarRentalRequest(BaseModel):
+        destination: str
+        vehicle_class: str = "Executive Sedan"
+        rental_days: int = 4
+
+    @app.post("/external/mcp/ground-transport")
+    async def ground_transport(req: CarRentalRequest, request: Request):
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Vault credential")
+
+        return {
+            "external_mcp": "amadeus-partner-gds",
+            "status": "reserved",
+            "rental_id": f"RENT-{uuid.uuid4().hex[:6].upper()}",
+            "destination": req.destination,
+            "vehicle": req.vehicle_class,
+            "days": req.rental_days,
+            "total_amount_usd": 85.0 * req.rental_days,
+            "vault_egress_security": {"credential_injected_by": "consul-terminating-gateway", "authenticated": True},
+        }
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "external-mcp"}
+
+  otel_collector_main.py: |
+    from fastapi import FastAPI, Request
+    import time
+
+    app = FastAPI(title="CAMP OpenTelemetry Collector")
+    traces_store = []
+
+    @app.post("/v1/traces")
+    async def ingest_trace(request: Request):
+        data = await request.json()
+        record = {
+            "ingest_timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "trace_id": data.get("trace_id", f"trace-{int(time.time())}"),
+            "service": data.get("service", "unknown"),
+            "tokens_used": data.get("tokens_used", 0),
+            "payload": data,
+        }
+        traces_store.append(record)
+        return {"status": "accepted", "trace_id": record["trace_id"]}
+
+    @app.get("/v1/traces")
+    async def get_traces():
+        return {"traces": list(reversed(traces_store[-50:]))}
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "otel-collector"}
+
+  indigo_analytics_main.py: |
+    from fastapi import FastAPI
+
+    app = FastAPI(title="INDIGO Analytic Engine")
+
+    @app.get("/api/indigo/audit-summary")
+    async def audit_summary():
+        return {
+            "engine": "INDIGO-AI-Governance",
+            "compliance_status": "COMPLIANT",
+            "metrics": {"policy_violations": 0, "tokens_inspected": 14200, "avg_latency_ms": 38.5},
+        }
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "healthy", "service": "indigo-analytics"}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: camp-gateway-configs
+data:
+  travel_igw.yaml: |
+    admin:
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 9901
+    static_resources:
+      listeners:
+      - name: travel_igw_listener
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 10001
+        filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: travel_igw
+              codec_type: AUTO
+              route_config:
+                name: travel_llm_routes
+                virtual_hosts:
+                - name: llm_vhost
+                  domains: ["*"]
+                  routes:
+                  - match:
+                      prefix: "/v1/chat/completions"
+                    route:
+                      cluster: llm_backend_cluster
+                      timeout: 15s
+                    request_headers_to_add:
+                      - header:
+                          key: "Authorization"
+                          value: "Bearer vault:secret/data/ai/llm#api_key_sk_99201"
+                        append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                      - header:
+                          key: "x-consul-mesh-tier"
+                          value: "travel-igw-2.1"
+                        append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                  - match:
+                      prefix: "/v1/messages"
+                    route:
+                      cluster: llm_backend_cluster
+                      timeout: 15s
+                    request_headers_to_add:
+                      - header:
+                          key: "Authorization"
+                          value: "Bearer vault:secret/data/ai/anthropic#api_key_ant_8820"
+                        append_action: OVERWRITE_IF_EXISTS_OR_ADD
+              http_filters:
+              - name: envoy.filters.http.local_ratelimit
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                  stat_prefix: travel_igw_token_limiter
+                  token_bucket:
+                    max_tokens: 100
+                    tokens_per_fill: 100
+                    fill_interval: 1s
+                  filter_enabled:
+                    default_value:
+                      numerator: 100
+                      denominator: HUNDRED
+                  filter_enforced:
+                    default_value:
+                      numerator: 100
+                      denominator: HUNDRED
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      clusters:
+      - name: llm_backend_cluster
+        connect_timeout: 1s
+        type: STRICT_DNS
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: llm_backend_cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: {{ .Values.llmBackend.name }}
+                    port_value: {{ .Values.llmBackend.port }}
+
+  terminating_gw.yaml: |
+    admin:
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 9902
+    static_resources:
+      listeners:
+      - name: terminating_gw_listener
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 10002
+        filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: terminating_gw
+              codec_type: AUTO
+              route_config:
+                name: terminating_routes
+                virtual_hosts:
+                - name: egress_vhost
+                  domains: ["*"]
+                  routes:
+                  - match:
+                      prefix: "/external/mcp"
+                    route:
+                      cluster: external_mcp_cluster
+                      timeout: 10s
+                    request_headers_to_add:
+                      - header:
+                          key: "Authorization"
+                          value: "Bearer vault:secret/data/partners/amadeus#gds_token_9918"
+                        append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                      - header:
+                          key: "x-egress-gateway"
+                          value: "consul-terminating-gw-2.1"
+                        append_action: OVERWRITE_IF_EXISTS_OR_ADD
+              http_filters:
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      clusters:
+      - name: external_mcp_cluster
+        connect_timeout: 1s
+        type: STRICT_DNS
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: external_mcp_cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: {{ .Values.externalMcp.name }}
+                    port_value: {{ .Values.externalMcp.port }}
+
+  api_gw.yaml: |
+    admin:
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 9900
+    static_resources:
+      listeners:
+      - name: api_gw_listener
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 10000
+        filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: api_gw
+              codec_type: AUTO
+              route_config:
+                name: api_gw_routes
+                virtual_hosts:
+                - name: ingress_vhost
+                  domains: ["*"]
+                  routes:
+                  - match:
+                      prefix: "/agent/orchestrate"
+                    route:
+                      cluster: orchestrator_cluster
+                      timeout: 20s
+              http_filters:
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      clusters:
+      - name: orchestrator_cluster
+        connect_timeout: 1s
+        type: STRICT_DNS
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: orchestrator_cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: {{ .Values.orchestrator.name }}
+                    port_value: {{ .Values.orchestrator.port }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: camp-ui-html
+data:
+  index.html: |
+{{ .Files.Get "frontend/static/index.html" | indent 4 }}

@@ -1,0 +1,205 @@
+version: '3.8'
+
+services:
+  # 1. Experience UI & Review Backend (Traveler Workspace + IBM Verify OBO Mock)
+  experience-ui:
+    image: python:3.11-slim
+    container_name: camp-experience-ui
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn frontend.main:app --host 0.0.0.0 --port 3000"
+    ports:
+      - "3000:3000"
+    environment:
+      - API_GATEWAY_URL=http://api-gw:10000
+      - BOOKING_AGENT_URL=http://booking-agent:8086
+    depends_on:
+      - api-gw
+
+  # 2. Ingress API Gateway (Envoy)
+  api-gw:
+    image: envoyproxy/envoy:v1.31-latest
+    container_name: camp-api-gw
+    volumes:
+      - ./gateways/api_gw/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+    ports:
+      - "10000:10000"
+      - "9900:9900"
+    depends_on:
+      - travel-orchestrator
+
+  # 3. Travel Orchestrator Agent
+  travel-orchestrator:
+    image: python:3.11-slim
+    container_name: camp-travel-orchestrator
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn agents.orchestrator.main:app --host 0.0.0.0 --port 8080"
+    ports:
+      - "8080:8080"
+    environment:
+      - BOOKING_AGENT_URL=http://booking-agent:8086
+      - WEATHER_AGENT_URL=http://weather-agent:8087
+      - TRAVEL_IGW_URL=http://travel-igw:10001
+      - OTEL_COLLECTOR_URL=http://otel-collector:4318
+
+  # 4. Booking Sub-Agent
+  booking-agent:
+    image: python:3.11-slim
+    container_name: camp-booking-agent
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn agents.booking_agent.main:app --host 0.0.0.0 --port 8086"
+    ports:
+      - "8086:8086"
+    environment:
+      - HOTEL_MCP_URL=http://hotel-mcp:8083
+      - FLIGHT_MCP_URL=http://flight-mcp:8084
+      - TERMINATING_GW_URL=http://terminating-gw:10002
+
+  # 5. Weather Sub-Agent
+  weather-agent:
+    image: python:3.11-slim
+    container_name: camp-weather-agent
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn agents.weather_agent.main:app --host 0.0.0.0 --port 8087"
+    ports:
+      - "8087:8087"
+    environment:
+      - WEATHER_MCP_URL=http://weather-mcp:8082
+      - TRAVEL_IGW_URL=http://travel-igw:10001
+
+  # 6. Hotel Booking MCP Tool
+  hotel-mcp:
+    image: python:3.11-slim
+    container_name: camp-hotel-mcp
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn mcp_tools.hotel_booking.main:app --host 0.0.0.0 --port 8083"
+    ports:
+      - "8083:8083"
+
+  # 7. Flight Booking MCP Tool
+  flight-mcp:
+    image: python:3.11-slim
+    container_name: camp-flight-mcp
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn mcp_tools.flight_booking.main:app --host 0.0.0.0 --port 8084"
+    ports:
+      - "8084:8084"
+
+  # 8. Weather MCP Server
+  weather-mcp:
+    image: python:3.11-slim
+    container_name: camp-weather-mcp
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn mcp_tools.weather_server.main:app --host 0.0.0.0 --port 8082"
+    ports:
+      - "8082:8082"
+
+  # 9. travel-igw (Envoy AI Gateway for Model Access with Token Rate Limiting & Vault Key Injection)
+  travel-igw:
+    image: envoyproxy/envoy:v1.31-latest
+    container_name: camp-travel-igw
+    volumes:
+      - ./gateways/travel_igw/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+    ports:
+      - "10001:10001"
+      - "9901:9901"
+    depends_on:
+      - llm-backend
+
+  # 10. Foundation Model Backend (Ollama / OpenAI Mock)
+  llm-backend:
+    image: python:3.11-slim
+    container_name: camp-llm-backend
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn llm_backend.main:app --host 0.0.0.0 --port 8081"
+    ports:
+      - "8081:8081"
+
+  # 11. Terminating Gateway (Vault Credential Injection for External Partner MCP Tools)
+  terminating-gw:
+    image: envoyproxy/envoy:v1.31-latest
+    container_name: camp-terminating-gw
+    volumes:
+      - ./gateways/terminating_gw/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+    ports:
+      - "10002:10002"
+      - "9902:9902"
+    depends_on:
+      - external-mcp
+
+  # 12. External MCP Server (External Travel Partner)
+  external-mcp:
+    image: python:3.11-slim
+    container_name: camp-external-mcp
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn mcp_tools.external_mcp.main:app --host 0.0.0.0 --port 8088"
+    ports:
+      - "8088:8088"
+
+  # 13. AI Observability: OpenTelemetry Collector & Span Relay
+  otel-collector:
+    image: python:3.11-slim
+    container_name: camp-otel-collector
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn observability.otel.main:app --host 0.0.0.0 --port 4318"
+    ports:
+      - "4318:4318"
+
+  # 14. INDIGO Analytic Engine (Governance, Compliance, Security)
+  indigo-analytics:
+    image: python:3.11-slim
+    container_name: camp-indigo-analytics
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             uvicorn observability.indigo.main:app --host 0.0.0.0 --port 8089"
+    ports:
+      - "8089:8089"
+
+networks:
+  default:
+    name: camp-travel-mesh-net

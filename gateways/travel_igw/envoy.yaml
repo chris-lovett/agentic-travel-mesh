@@ -1,0 +1,89 @@
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+
+static_resources:
+  listeners:
+  - name: travel_igw_listener
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 10001
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: travel_igw
+          codec_type: AUTO
+          route_config:
+            name: travel_llm_routes
+            virtual_hosts:
+            - name: llm_vhost
+              domains: ["*"]
+              routes:
+              - match:
+                  prefix: "/v1/chat/completions"
+                route:
+                  cluster: llm_backend_cluster
+                  timeout: 15s
+                request_headers_to_add:
+                  # Vault Credential Injection for Foundation Model
+                  - header:
+                      key: "Authorization"
+                      value: "Bearer vault:secret/data/ai/llm#api_key_sk_99201"
+                    append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                  - header:
+                      key: "x-consul-mesh-tier"
+                      value: "travel-igw-2.1"
+                    append_action: OVERWRITE_IF_EXISTS_OR_ADD
+
+              - match:
+                  prefix: "/v1/messages"
+                route:
+                  cluster: llm_backend_cluster
+                  timeout: 15s
+                request_headers_to_add:
+                  - header:
+                      key: "Authorization"
+                      value: "Bearer vault:secret/data/ai/anthropic#api_key_ant_8820"
+                    append_action: OVERWRITE_IF_EXISTS_OR_ADD
+
+          http_filters:
+          - name: envoy.filters.http.local_ratelimit
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+              stat_prefix: travel_igw_token_limiter
+              token_bucket:
+                max_tokens: 100
+                tokens_per_fill: 100
+                fill_interval: 1s
+              filter_enabled:
+                default_value:
+                  numerator: 100
+                  denominator: HUNDRED
+              filter_enforced:
+                default_value:
+                  numerator: 100
+                  denominator: HUNDRED
+
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+  - name: llm_backend_cluster
+    connect_timeout: 1s
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: llm_backend_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: llm-backend
+                port_value: 8081
