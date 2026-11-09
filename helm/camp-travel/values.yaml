@@ -140,3 +140,27 @@ indigoAnalytics:
   resources:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
+
+# 15. Grafana Tempo (Distributed Tracing Backend)
+tempo:
+  enabled: true
+  name: tempo
+  otlpGrpcPort: 4317
+  otlpHttpPort: 4318
+  httpPort: 3200
+  replicaCount: 1
+  image: "docker.io/grafana/tempo:2.6.1"
+  resources:
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }
+
+# 16. Grafana (AI Observability & Trace Inspection Dashboard)
+grafana:
+  enabled: true
+  name: grafana
+  port: 3000
+  replicaCount: 1
+  image: "docker.io/grafana/grafana:11.3.0"
+  resources:
+    limits: { cpu: "250m", memory: "256Mi" }
+    requests: { cpu: "30m", memory: "64Mi" }

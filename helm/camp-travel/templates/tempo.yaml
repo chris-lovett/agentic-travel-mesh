@@ -1,0 +1,89 @@
+{{- if .Values.tempo.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+data:
+  tempo.yaml: |
+    server:
+      http_listen_port: 3200
+      log_level: info
+
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+
+    ingester:
+      max_block_duration: 5m
+
+    compactor:
+      compaction:
+        block_retention: 24h
+
+    storage:
+      trace:
+        backend: local
+        wal:
+          path: /tmp/tempo/wal
+        local:
+          path: /tmp/tempo/blocks
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.tempo.name }}
+  labels: { app: {{ .Values.tempo.name }} }
+spec:
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+    - name: http-tempo
+      port: 3200
+      targetPort: 3200
+  selector:
+    app: {{ .Values.tempo.name }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.tempo.name }}
+  labels: { app: {{ .Values.tempo.name }} }
+spec:
+  replicas: {{ .Values.tempo.replicaCount }}
+  selector: { matchLabels: { app: {{ .Values.tempo.name }} } }
+  template:
+    metadata:
+      labels: { app: {{ .Values.tempo.name }} }
+    spec:
+      containers:
+        - name: tempo
+          image: {{ .Values.tempo.image }}
+          args: ["-config.file=/etc/tempo/tempo.yaml"]
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+            - name: http-tempo
+              containerPort: 3200
+          volumeMounts:
+            - name: tempo-config
+              mountPath: /etc/tempo
+          resources:
+            {{- toYaml .Values.tempo.resources | nindent 12 }}
+      volumes:
+        - name: tempo-config
+          configMap:
+            name: tempo-config
+{{- end }}

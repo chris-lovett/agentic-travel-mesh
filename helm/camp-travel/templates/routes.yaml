@@ -31,5 +31,21 @@ spec:
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: camp-grafana
+  labels: { app: {{ .Values.grafana.name }} }
+spec:
+  to:
+    kind: Service
+    name: {{ .Values.grafana.name }}
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
 {{- end }}
 {{- end }}

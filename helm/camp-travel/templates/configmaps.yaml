@@ -657,9 +657,10 @@ data:
         p_tok = data.get("prompt_tokens", int(data.get("tokens_used", 0) * 0.6))
         c_tok = data.get("completion_tokens", int(data.get("tokens_used", 0) * 0.4))
         tot_tok = p_tok + c_tok
+        t_id = data.get("trace_id", f"trace-{int(time.time()*1000)}")
         record = {
             "ingest_timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "trace_id": data.get("trace_id", f"trace-{int(time.time()*1000)}"),
+            "trace_id": t_id,
             "service": data.get("service", "travel-orchestrator"),
             "otel_gen_ai_attributes": {
                 "gen_ai.system": "watsonx / consul-ai-gw",
@@ -673,6 +674,15 @@ data:
             "payload": data,
         }
         traces_store.append(record)
+
+        # Forward span to Tempo OTLP receiver
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post("http://tempo:4318/v1/traces", json=data)
+        except Exception:
+            pass
+
         return {"status": "accepted", "trace_id": record["trace_id"], "attributes": record["otel_gen_ai_attributes"]}
 
     @app.get("/v1/traces")
