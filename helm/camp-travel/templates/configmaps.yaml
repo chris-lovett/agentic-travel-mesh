@@ -850,4 +850,4 @@ metadata:
   name: camp-ui-html
 data:
   index.html: |
-{{ .Files.Get "frontend/static/index.html" | indent 4 }}
+{{ .Files.Get "files/index.html" | indent 4 }}

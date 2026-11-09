@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Consul Agentic Mesh Platform (CAMP) — Travel Booking Workspace</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 15px rgba(220, 38, 38, 0.4); }
+      50% { box-shadow: 0 0 25px rgba(239, 68, 68, 0.8); }
+    }
+    .pulse-agent { animation: pulseGlow 2s infinite; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Navigation / Header -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+    <div class="flex items-center space-x-4">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-red-600 to-rose-400 flex items-center justify-center font-bold text-xl shadow-lg shadow-red-900/40">
+        <i class="fa-solid fa-cube text-white"></i>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="text-lg font-bold tracking-tight text-white">Consul Agentic Mesh Platform <span class="text-xs bg-red-950 text-red-400 border border-red-800 px-2 py-0.5 rounded-full font-mono">CAMP 2.1</span></h1>
+        </div>
+        <p class="text-xs text-slate-400">Travel Booking Multi-Agent Reference Architecture</p>
+      </div>
+    </div>
+
+    <!-- Identity & Cluster Metadata -->
+    <div class="flex items-center space-x-4 text-xs font-mono">
+      <div class="flex items-center space-x-2 bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-lg">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-slate-400">Mesh Fabric:</span>
+        <span class="text-slate-200 font-semibold">Consul 2.1 Enterprise</span>
+      </div>
+      <div class="flex items-center space-x-2 bg-indigo-950/70 border border-indigo-700/60 text-indigo-300 px-3 py-1.5 rounded-lg">
+        <i class="fa-solid fa-id-badge text-indigo-400"></i>
+        <span>IBM Verify OBO:</span>
+        <span id="obo-pill" class="font-bold text-white">traveler-101 (Alex Mercer)</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Grid -->
+  <main class="flex-1 p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto w-full">
+
+    <!-- Left Column: Traveler Trip Request (4 cols) -->
+    <section class="lg:col-span-4 flex flex-col space-y-5">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300 flex items-center space-x-2">
+            <i class="fa-solid fa-plane-departure text-red-400"></i>
+            <span>Traveler Workspace</span>
+          </h2>
+          <span class="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded">Experience UI</span>
+        </div>
+
+        <!-- Quick Pre-fill Scenarios -->
+        <div>
+          <label class="text-xs text-slate-400 block mb-2 font-medium">Quick Scenarios</label>
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            <button onclick="setScenario('sf')" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg p-2 text-left transition font-medium text-slate-200">
+              <span class="block font-bold">🌉 San Francisco</span>
+              <span class="text-[10px] text-slate-400">AI Summit ($2.5k)</span>
+            </button>
+            <button onclick="setScenario('london')" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg p-2 text-left transition font-medium text-slate-200">
+              <span class="block font-bold">🇬🇧 London</span>
+              <span class="text-[10px] text-slate-400">Client Exec ($3.2k)</span>
+            </button>
+            <button onclick="setScenario('tokyo')" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg p-2 text-left transition font-medium text-slate-200">
+              <span class="block font-bold">🇯🇵 Tokyo</span>
+              <span class="text-[10px] text-slate-400">Partner Days ($4k)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Form Inputs -->
+        <form id="trip-form" onsubmit="handleTripSubmit(event)" class="space-y-3 text-xs">
+          <div>
+            <label class="text-slate-400 block mb-1">Traveler Name</label>
+            <input id="inp-traveler" type="text" value="Alex Mercer" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-slate-400 block mb-1">Origin City / Code</label>
+              <input id="inp-origin" type="text" value="JFK" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
+            </div>
+            <div>
+              <label class="text-slate-400 block mb-1">Destination City</label>
+              <input id="inp-destination" type="text" value="San Francisco" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-slate-400 block mb-1">Duration (Days)</label>
+              <input id="inp-duration" type="number" value="4" min="1" max="14" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
+            </div>
+            <div>
+              <label class="text-slate-400 block mb-1">Budget (USD)</label>
+              <input id="inp-budget" type="number" value="2500" min="500" max="10000" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
+            </div>
+          </div>
+
+          <div>
+            <label class="text-slate-400 block mb-1">Trip Purpose</label>
+            <input id="inp-purpose" type="text" value="Annual HashiCorp & AI Architecture Summit" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
+          </div>
+
+          <button id="btn-submit" type="submit" class="w-full mt-4 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 font-semibold text-white py-2.5 rounded-lg shadow-lg shadow-red-900/30 flex items-center justify-center space-x-2 transition">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span>Orchestrate Travel via Mesh</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Mesh Topology Badge -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-xs font-mono space-y-2">
+        <div class="flex items-center justify-between text-slate-400">
+          <span>Active Architecture</span>
+          <span class="text-emerald-400">Synced</span>
+        </div>
+        <div class="text-[11px] text-slate-400 space-y-1">
+          <div class="flex items-center space-x-2"><i class="fa-solid fa-check text-emerald-400"></i><span>travel-igw (Envoy AI Gateway)</span></div>
+          <div class="flex items-center space-x-2"><i class="fa-solid fa-check text-emerald-400"></i><span>Hotel & Flight MCP sidecars</span></div>
+          <div class="flex items-center space-x-2"><i class="fa-solid fa-check text-emerald-400"></i><span>Terminating GW Vault Credential Injection</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Center Column: Multi-Agent Execution & Itinerary (5 cols) -->
+    <section class="lg:col-span-5 flex flex-col space-y-5">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex-1 flex flex-col space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300 flex items-center space-x-2">
+            <i class="fa-solid fa-network-wired text-indigo-400"></i>
+            <span>Agentic Runtime Fabric</span>
+          </h2>
+          <span id="agent-status" class="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">Idle</span>
+        </div>
+
+        <!-- Real-Time Agent Execution Pipeline -->
+        <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-4 space-y-3 font-mono text-xs">
+          <div class="text-slate-400 text-[11px] uppercase tracking-wider mb-2 font-bold">Live Mesh Flow</div>
+
+          <div id="step-1" class="flex items-center space-x-3 text-slate-500">
+            <i class="fa-solid fa-circle-dot text-[10px]"></i>
+            <span>1. Ingress API Gateway & OBO Auth Verification</span>
+          </div>
+
+          <div id="step-2" class="flex items-center space-x-3 text-slate-500">
+            <i class="fa-solid fa-circle-dot text-[10px]"></i>
+            <span>2. Travel Orchestrator $\rightarrow$ Weather & Booking Agents</span>
+          </div>
+
+          <div id="step-3" class="flex items-center space-x-3 text-slate-500">
+            <i class="fa-solid fa-circle-dot text-[10px]"></i>
+            <span>3. Query Hotel, Flight & Terminating GW Partner MCPs</span>
+          </div>
+
+          <div id="step-4" class="flex items-center space-x-3 text-slate-500">
+            <i class="fa-solid fa-circle-dot text-[10px]"></i>
+            <span>4. travel-igw AI Gateway (LLM Synthesis & Token Policy)</span>
+          </div>
+        </div>
+
+        <!-- Generated Itinerary & Proposal View -->
+        <div id="itinerary-container" class="space-y-3 hidden flex-1 flex flex-col">
+          <div class="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-red-400 uppercase tracking-wider">Executive Synthesis</span>
+              <span id="trip-budget-badge" class="text-xs px-2 py-0.5 rounded font-mono bg-emerald-950 text-emerald-400 border border-emerald-800">Within Budget</span>
+            </div>
+            <p id="synthesis-text" class="text-xs text-slate-200 leading-relaxed"></p>
+          </div>
+
+          <!-- Cards for Flight, Hotel, Weather -->
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-1">
+              <div class="text-[11px] text-slate-400 font-bold flex items-center space-x-1">
+                <i class="fa-solid fa-plane text-sky-400"></i>
+                <span>Flight Proposal</span>
+              </div>
+              <div id="flight-val" class="text-slate-100 font-semibold">--</div>
+              <div id="flight-price" class="text-[11px] text-emerald-400 font-mono">--</div>
+            </div>
+
+            <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-1">
+              <div class="text-[11px] text-slate-400 font-bold flex items-center space-x-1">
+                <i class="fa-solid fa-hotel text-amber-400"></i>
+                <span>Hotel Proposal</span>
+              </div>
+              <div id="hotel-val" class="text-slate-100 font-semibold">--</div>
+              <div id="hotel-price" class="text-[11px] text-emerald-400 font-mono">--</div>
+            </div>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-1 text-xs">
+            <div class="text-[11px] text-slate-400 font-bold flex items-center space-x-1">
+              <i class="fa-solid fa-cloud-sun text-yellow-400"></i>
+              <span>Destination Climate Advisory</span>
+            </div>
+            <div id="weather-val" class="text-slate-300">--</div>
+            <div id="packing-val" class="text-[11px] text-slate-400 italic">--</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Right Column: Review Backend & HITL Approval (3 cols) -->
+    <section class="lg:col-span-3 flex flex-col space-y-5">
+      <!-- Human in the Loop (HITL) Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300 flex items-center space-x-2">
+            <i class="fa-solid fa-user-check text-emerald-400"></i>
+            <span>Review & Approvals</span>
+          </h2>
+          <span class="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded">HITL</span>
+        </div>
+
+        <div id="hitl-empty" class="text-xs text-slate-500 text-center py-6">
+          Submit a trip plan to review and authorize reservations.
+        </div>
+
+        <div id="hitl-controls" class="hidden space-y-3">
+          <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs space-y-2">
+            <div class="flex justify-between">
+              <span class="text-slate-400">Estimated Cost:</span>
+              <span id="hitl-cost" class="font-bold text-white font-mono">$0.00</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Compliance Check:</span>
+              <span class="text-emerald-400 font-semibold font-mono">PASSED</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <button onclick="submitReviewAction('APPROVE')" class="bg-emerald-600 hover:bg-emerald-500 font-bold text-white py-2 rounded-lg transition shadow-md shadow-emerald-900/30">
+              <i class="fa-solid fa-check mr-1"></i> Approve
+            </button>
+            <button onclick="submitReviewAction('REJECT')" class="bg-rose-700 hover:bg-rose-600 font-bold text-white py-2 rounded-lg transition">
+              <i class="fa-solid fa-xmark mr-1"></i> Reject
+            </button>
+          </div>
+        </div>
+
+        <div id="confirmation-box" class="hidden bg-emerald-950/80 border border-emerald-700/60 p-3 rounded-xl text-xs space-y-2 text-emerald-200">
+          <div class="font-bold flex items-center space-x-1 text-emerald-300">
+            <i class="fa-solid fa-circle-check"></i>
+            <span>Reservations Confirmed</span>
+          </div>
+          <div id="confirmation-details" class="text-[11px] font-mono space-y-1"></div>
+        </div>
+      </div>
+
+      <!-- AI Observability & Audit Feed -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex-1 flex flex-col space-y-3">
+        <div class="flex items-center justify-between text-xs font-semibold text-slate-300">
+          <span class="flex items-center space-x-1">
+            <i class="fa-solid fa-chart-line text-sky-400"></i>
+            <span>AI Observability (INDIGO)</span>
+          </span>
+          <span class="text-[10px] text-slate-500 font-mono">OTel Span Relay</span>
+        </div>
+        <div id="audit-feed" class="flex-1 bg-slate-950 border border-slate-800/80 rounded-xl p-3 overflow-y-auto space-y-2 text-[11px] font-mono max-h-48">
+          <div class="text-slate-500 italic">Listening for trace spans...</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    let activeTripId = null;
+
+    function setScenario(type) {
+      if (type === 'sf') {
+        document.getElementById('inp-origin').value = 'JFK';
+        document.getElementById('inp-destination').value = 'San Francisco';
+        document.getElementById('inp-duration').value = '4';
+        document.getElementById('inp-budget').value = '2500';
+        document.getElementById('inp-purpose').value = 'Annual HashiCorp & AI Architecture Summit';
+      } else if (type === 'london') {
+        document.getElementById('inp-origin').value = 'JFK';
+        document.getElementById('inp-destination').value = 'London';
+        document.getElementById('inp-duration').value = '5';
+        document.getElementById('inp-budget').value = '3200';
+        document.getElementById('inp-purpose').value = 'Executive Client Quarterly Review';
+      } else if (type === 'tokyo') {
+        document.getElementById('inp-origin').value = 'SFO';
+        document.getElementById('inp-destination').value = 'Tokyo';
+        document.getElementById('inp-duration').value = '6';
+        document.getElementById('inp-budget').value = '4000';
+        document.getElementById('inp-purpose').value = 'Global AI Partner Enablement Days';
+      }
+    }
+
+    async function handleTripSubmit(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit');
+      const statusPill = document.getElementById('agent-status');
+
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Coordinating Multi-Agent Mesh...</span>';
+      statusPill.innerText = "Orchestrating...";
+      statusPill.className = "text-xs bg-red-950 text-red-400 border border-red-800 px-2 py-0.5 rounded font-mono animate-pulse";
+
+      // Animate Pipeline Steps
+      highlightStep('step-1');
+      setTimeout(() => highlightStep('step-2'), 400);
+      setTimeout(() => highlightStep('step-3'), 800);
+      setTimeout(() => highlightStep('step-4'), 1200);
+
+      const payload = {
+        user_name: document.getElementById('inp-traveler').value,
+        origin: document.getElementById('inp-origin').value,
+        destination: document.getElementById('inp-destination').value,
+        duration_days: parseInt(document.getElementById('inp-duration').value),
+        budget_usd: parseFloat(document.getElementById('inp-budget').value),
+        trip_purpose: document.getElementById('inp-purpose').value,
+      };
+
+      try {
+        const resp = await fetch('/api/travel/plan', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        renderPlan(data);
+        fetchAuditFeed();
+      } catch (err) {
+        alert("Error coordinating trip via mesh: " + err);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i><span>Orchestrate Travel via Mesh</span>';
+        statusPill.innerText = "Ready for Review";
+        statusPill.className = "text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded font-mono";
+      }
+    }
+
+    function highlightStep(stepId) {
+      ['step-1', 'step-2', 'step-3', 'step-4'].forEach(id => {
+        const el = document.getElementById(id);
+        if (id === stepId) {
+          el.className = "flex items-center space-x-3 text-red-400 font-bold transition";
+        }
+      });
+    }
+
+    function renderPlan(data) {
+      activeTripId = data.trip_id;
+      document.getElementById('itinerary-container').classList.remove('hidden');
+      document.getElementById('synthesis-text').innerText = data.executive_summary;
+
+      const bp = data.booking_proposals || {};
+      const fl = bp.selected_flight || {};
+      const ht = bp.selected_hotel || {};
+      const wt = data.weather_advisory || {};
+
+      document.getElementById('flight-val').innerText = `${fl.airline || 'Flight'} (${fl.flight_number || 'N/A'})`;
+      document.getElementById('flight-price').innerText = `$${fl.price_usd || 0} USD • ${fl.duration || ''}`;
+
+      document.getElementById('hotel-val').innerText = ht.name || 'Hotel Selection';
+      document.getElementById('hotel-price').innerText = `$${ht.price_per_night || 0}/night • Rating: ${ht.rating || 4.5}⭐`;
+
+      document.getElementById('weather-val').innerText = wt.forecast_summary || 'Mild & Clear';
+      document.getElementById('packing-val').innerText = `Packing Advisory: ${wt.packing_recommendations || 'Standard business attire'}`;
+
+      // HITL Controls
+      document.getElementById('hitl-empty').classList.add('hidden');
+      document.getElementById('hitl-controls').classList.remove('hidden');
+      document.getElementById('confirmation-box').classList.add('hidden');
+      document.getElementById('hitl-cost').innerText = `$${data.total_estimated_usd || 0} USD`;
+    }
+
+    async function submitReviewAction(action) {
+      if (!activeTripId) return;
+
+      const resp = await fetch('/api/travel/review-action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({trip_id: activeTripId, action: action, approver: "Manager (HITL)"})
+      });
+      const data = await resp.json();
+
+      if (action === 'APPROVE') {
+        document.getElementById('hitl-controls').classList.add('hidden');
+        document.getElementById('confirmation-box').classList.remove('hidden');
+
+        const det = data.details || {};
+        const fl = det.flight_booking || {};
+        const ht = det.hotel_booking || {};
+
+        document.getElementById('confirmation-details').innerHTML = `
+          <div>✈️ <strong>Flight:</strong> ${fl.pnr || 'PNR-CONFIRMED'} (${fl.flight_number || ''})</div>
+          <div>🏨 <strong>Hotel:</strong> ${ht.booking_reference || 'HTL-CONFIRMED'} (${ht.hotel_name || ''})</div>
+          <div>🚗 <strong>Transport:</strong> Reserved via Terminating GW</div>
+        `;
+      } else {
+        alert("Trip plan rejected.");
+        document.getElementById('hitl-controls').classList.add('hidden');
+        document.getElementById('hitl-empty').classList.remove('hidden');
+      }
+      fetchAuditFeed();
+    }
+
+    async function fetchAuditFeed() {
+      try {
+        const resp = await fetch('/api/travel/audit-stream');
+        const data = await resp.json();
+        const feed = document.getElementById('audit-feed');
+        if (data.audit_events && data.audit_events.length > 0) {
+          feed.innerHTML = data.audit_events.map(ev => `
+            <div class="border-b border-slate-800/60 pb-1">
+              <span class="text-slate-500">${ev.timestamp.split(' ')[1]}</span>
+              <span class="text-indigo-400 font-bold">${ev.event}</span>
+              <span class="text-slate-300 block text-[10px]">Trip: ${ev.trip_id} | ${ev.destination || ''}</span>
+            </div>
+          `).join('');
+        }
+      } catch (e) {}
+    }
+
+    setInterval(fetchAuditFeed, 4000);
+  </script>
+</body>
+</html>
