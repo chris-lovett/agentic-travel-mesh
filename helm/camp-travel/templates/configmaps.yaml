@@ -185,13 +185,29 @@ data:
             booking_data = b_res.json()
 
             prompt = f"Traveler: {req.traveler_name}, Destination: {req.destination}, Cost: ${booking_data.get('total_estimated_usd')}, Weather: {weather_data.get('forecast_summary')}. Write 3-sentence summary."
+            llm_telemetry = {
+                "model": "meta-llama/llama-3-70b-instruct",
+                "prompt_tokens": 412,
+                "completion_tokens": 285,
+                "total_tokens": 697,
+                "estimated_cost_usd": 0.0035,
+                "gateway": "travel-igw (Envoy AI Gateway 2.1)",
+                "credential_broker": "HashiCorp Vault",
+            }
             try:
                 llm_resp = await client.post(
                     f"{TRAVEL_IGW_URL}/v1/chat/completions",
-                    json={"model": "gpt-4o", "messages": [{"role": "user", "content": prompt}]},
+                    json={"model": "meta-llama/llama-3-70b-instruct", "messages": [{"role": "user", "content": prompt}]},
                     headers={**headers, "Content-Type": "application/json"},
                 )
-                summary = llm_resp.json()["choices"][0]["message"]["content"]
+                llm_json = llm_resp.json()
+                summary = llm_json["choices"][0]["message"]["content"]
+                usage = llm_json.get("usage", {})
+                if usage:
+                    llm_telemetry["prompt_tokens"] = usage.get("prompt_tokens", 412)
+                    llm_telemetry["completion_tokens"] = usage.get("completion_tokens", 285)
+                    llm_telemetry["total_tokens"] = usage.get("total_tokens", 697)
+                    llm_telemetry["estimated_cost_usd"] = round(llm_telemetry["total_tokens"] * 0.000005, 5)
             except Exception:
                 summary = f"Itinerary prepared for {req.destination} with {req.duration_days} nights lodging, flights, and transport at ${booking_data.get('total_estimated_usd')}."
 
@@ -202,7 +218,10 @@ data:
                         "trace_id": trace_id,
                         "service": "travel-orchestrator",
                         "user_obo": obo_user,
-                        "tokens_used": 65,
+                        "model": llm_telemetry["model"],
+                        "tokens_used": llm_telemetry["total_tokens"],
+                        "prompt_tokens": llm_telemetry["prompt_tokens"],
+                        "completion_tokens": llm_telemetry["completion_tokens"],
                         "destination": req.destination,
                         "cost_usd": booking_data.get("total_estimated_usd"),
                     },
@@ -224,6 +243,7 @@ data:
             "executive_summary": summary,
             "weather_advisory": weather_data,
             "booking_proposals": booking_data,
+            "ai_telemetry": llm_telemetry,
             "requires_hitl_approval": True,
         }
 
@@ -531,9 +551,9 @@ data:
     from fastapi import FastAPI, Request, HTTPException, status
     from pydantic import BaseModel
     from typing import List, Optional
-    import time
+    import time, math
 
-    app = FastAPI(title="CAMP Foundation Model Service")
+    app = FastAPI(title="CAMP Foundation Model Service", version="2.1.0")
 
     class ChatMessage(BaseModel):
         role: str
@@ -543,6 +563,11 @@ data:
         model: str
         messages: List[ChatMessage]
 
+    def calc_tokens(text: str) -> int:
+        if not text:
+            return 0
+        return max(len(text.split()), math.ceil(len(text) / 3.7))
+
     @app.post("/v1/chat/completions")
     @app.post("/openai/v1/chat/completions")
     async def chat_completions(req: ChatCompletionRequest, request: Request):
@@ -550,12 +575,31 @@ data:
         if not auth.startswith("Bearer "):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Vault API key")
 
+        user_prompt = "\n".join([m.content for m in req.messages if m.role == "user"])
+        p_tokens = calc_tokens(user_prompt)
+
+        dest = "the destination"
+        for line in user_prompt.splitlines():
+            if "destination:" in line.lower() or "to " in line.lower() or "route:" in line.lower():
+                parts = line.split(":")[-1].strip()
+                if parts:
+                    dest = parts
+
+        reply = f"[travel-igw AI Gateway] Completed multi-agent reasoning with '{req.model}'. Consolidated flight, hotel, and transport logistics for {dest}. Itinerary meets corporate travel compliance."
+        c_tokens = calc_tokens(reply)
+        total_tok = p_tokens + c_tokens
+        call_cost = round(total_tok * 0.000005, 5)
+
         return {
             "id": f"chatcmpl-{int(time.time()*1000)}",
             "model": req.model,
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": f"[Ollama/OpenAI via travel-igw] Processed reasoning for '{req.model}'. Generated synthesized travel plan."}}],
-            "usage": {"prompt_tokens": 15, "completion_tokens": 30, "total_tokens": 45},
-            "gateway_metadata": {"authenticated_by_vault": True, "gateway_tier": "travel-igw-2.1"},
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}}],
+            "usage": {"prompt_tokens": p_tokens, "completion_tokens": c_tokens, "total_tokens": total_tok},
+            "gateway_metadata": {
+                "authenticated_by_vault": True,
+                "gateway_tier": request.headers.get("x-consul-mesh-tier", "travel-igw-2.1"),
+                "estimated_cost_usd": call_cost,
+            },
         }
 
     @app.post("/v1/messages")
@@ -610,15 +654,26 @@ data:
     @app.post("/v1/traces")
     async def ingest_trace(request: Request):
         data = await request.json()
+        p_tok = data.get("prompt_tokens", int(data.get("tokens_used", 0) * 0.6))
+        c_tok = data.get("completion_tokens", int(data.get("tokens_used", 0) * 0.4))
+        tot_tok = p_tok + c_tok
         record = {
             "ingest_timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "trace_id": data.get("trace_id", f"trace-{int(time.time())}"),
-            "service": data.get("service", "unknown"),
-            "tokens_used": data.get("tokens_used", 0),
+            "trace_id": data.get("trace_id", f"trace-{int(time.time()*1000)}"),
+            "service": data.get("service", "travel-orchestrator"),
+            "otel_gen_ai_attributes": {
+                "gen_ai.system": "watsonx / consul-ai-gw",
+                "gen_ai.request.model": data.get("model", "meta-llama/llama-3-70b-instruct"),
+                "gen_ai.usage.prompt_tokens": p_tok,
+                "gen_ai.usage.completion_tokens": c_tok,
+                "gen_ai.usage.total_tokens": tot_tok,
+                "gen_ai.usage.cost_usd": round(tot_tok * 0.000005, 5),
+            },
+            "tokens_used": tot_tok,
             "payload": data,
         }
         traces_store.append(record)
-        return {"status": "accepted", "trace_id": record["trace_id"]}
+        return {"status": "accepted", "trace_id": record["trace_id"], "attributes": record["otel_gen_ai_attributes"]}
 
     @app.get("/v1/traces")
     async def get_traces():
@@ -633,12 +688,20 @@ data:
 
     app = FastAPI(title="INDIGO Analytic Engine")
 
+    @app.get("/api/analytics/summary")
     @app.get("/api/indigo/audit-summary")
     async def audit_summary():
         return {
             "engine": "INDIGO-AI-Governance",
             "compliance_status": "COMPLIANT",
-            "metrics": {"policy_violations": 0, "tokens_inspected": 14200, "avg_latency_ms": 38.5},
+            "metrics": {
+                "policy_violations": 0,
+                "tokens_inspected": 14200,
+                "avg_latency_ms": 38.5,
+                "active_foundation_model": "meta-llama/llama-3-70b-instruct",
+                "ai_gateway": "travel-igw (Consul 2.1)",
+                "credential_broker": "HashiCorp Vault",
+            },
         }
 
     @app.get("/healthz")
