@@ -14,13 +14,17 @@ spec:
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/connect-service: "{{ .Values.experienceUI.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.experienceUI.port }}"
+        consul.hashicorp.com/transparent-proxy-exclude-inbound-ports: "3000"
         consul.hashicorp.com/connect-service-upstreams: "{{ .Values.apiGw.name }}:10000, {{ .Values.bookingAgent.name }}:8086"
     spec:
       serviceAccountName: {{ .Values.experienceUI.name }}
       containers:
         - name: experience-ui
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/frontend_main.py:app --host 0.0.0.0 --port 3000"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic jinja2 && python3 -m uvicorn frontend_main:app --host 0.0.0.0 --port 3000"
           ports: [{ name: http, containerPort: 3000 }]
           volumeMounts:
             - name: python-code
@@ -31,7 +35,7 @@ spec:
             {{- toYaml .Values.experienceUI.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code
@@ -56,6 +60,7 @@ spec:
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/connect-service: "{{ .Values.apiGw.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.apiGw.port }}"
+        consul.hashicorp.com/transparent-proxy-exclude-inbound-ports: "10000"
     spec:
       serviceAccountName: {{ .Values.apiGw.name }}
       containers:
@@ -98,7 +103,10 @@ spec:
       containers:
         - name: orchestrator
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/orchestrator_main.py:app --host 0.0.0.0 --port 8080"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic && python3 -m uvicorn orchestrator_main:app --host 0.0.0.0 --port 8080"
           ports: [{ name: http, containerPort: 8080 }]
           volumeMounts:
             - name: python-code
@@ -107,7 +115,7 @@ spec:
             {{- toYaml .Values.orchestrator.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code
@@ -136,7 +144,10 @@ spec:
       containers:
         - name: booking-agent
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/booking_agent_main.py:app --host 0.0.0.0 --port 8086"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic && python3 -m uvicorn booking_agent_main:app --host 0.0.0.0 --port 8086"
           ports: [{ name: http, containerPort: 8086 }]
           volumeMounts:
             - name: python-code
@@ -145,7 +156,7 @@ spec:
             {{- toYaml .Values.bookingAgent.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code
@@ -174,7 +185,10 @@ spec:
       containers:
         - name: weather-agent
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/weather_agent_main.py:app --host 0.0.0.0 --port 8087"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic && python3 -m uvicorn weather_agent_main:app --host 0.0.0.0 --port 8087"
           ports: [{ name: http, containerPort: 8087 }]
           volumeMounts:
             - name: python-code
@@ -183,7 +197,7 @@ spec:
             {{- toYaml .Values.weatherAgent.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code
@@ -211,7 +225,10 @@ spec:
       containers:
         - name: hotel-mcp
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/hotel_mcp_main.py:app --host 0.0.0.0 --port 8083"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic && python3 -m uvicorn hotel_mcp_main:app --host 0.0.0.0 --port 8083"
           ports: [{ name: http, containerPort: 8083 }]
           volumeMounts:
             - name: python-code
@@ -220,7 +237,7 @@ spec:
             {{- toYaml .Values.hotelMcp.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code
@@ -248,7 +265,10 @@ spec:
       containers:
         - name: flight-mcp
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/flight_mcp_main.py:app --host 0.0.0.0 --port 8084"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic && python3 -m uvicorn flight_mcp_main:app --host 0.0.0.0 --port 8084"
           ports: [{ name: http, containerPort: 8084 }]
           volumeMounts:
             - name: python-code
@@ -257,7 +277,7 @@ spec:
             {{- toYaml .Values.flightMcp.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code
@@ -285,7 +305,10 @@ spec:
       containers:
         - name: weather-mcp
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/weather_mcp_main.py:app --host 0.0.0.0 --port 8082"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic && python3 -m uvicorn weather_mcp_main:app --host 0.0.0.0 --port 8082"
           ports: [{ name: http, containerPort: 8082 }]
           volumeMounts:
             - name: python-code
@@ -294,7 +317,7 @@ spec:
             {{- toYaml .Values.weatherMcp.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code
@@ -317,6 +340,7 @@ spec:
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/connect-service: "{{ .Values.travelIgw.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.travelIgw.port }}"
+        consul.hashicorp.com/transparent-proxy-exclude-inbound-ports: "10001"
     spec:
       serviceAccountName: {{ .Values.travelIgw.name }}
       containers:
@@ -358,7 +382,10 @@ spec:
       containers:
         - name: llm-backend
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/llm_backend_main.py:app --host 0.0.0.0 --port 8081"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic && python3 -m uvicorn llm_backend_main:app --host 0.0.0.0 --port 8081"
           ports: [{ name: http, containerPort: 8081 }]
           volumeMounts:
             - name: python-code
@@ -367,7 +394,7 @@ spec:
             {{- toYaml .Values.llmBackend.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code
@@ -390,6 +417,7 @@ spec:
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/connect-service: "{{ .Values.terminatingGw.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.terminatingGw.port }}"
+        consul.hashicorp.com/transparent-proxy-exclude-inbound-ports: "10002"
     spec:
       serviceAccountName: {{ .Values.terminatingGw.name }}
       containers:
@@ -427,7 +455,10 @@ spec:
       containers:
         - name: external-mcp
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/external_mcp_main.py:app --host 0.0.0.0 --port 8088"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic && python3 -m uvicorn external_mcp_main:app --host 0.0.0.0 --port 8088"
           ports: [{ name: http, containerPort: 8088 }]
           volumeMounts:
             - name: python-code
@@ -436,7 +467,7 @@ spec:
             {{- toYaml .Values.externalMcp.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code
@@ -464,7 +495,10 @@ spec:
       containers:
         - name: otel-collector
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/otel_collector_main.py:app --host 0.0.0.0 --port 4318"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic && python3 -m uvicorn otel_collector_main:app --host 0.0.0.0 --port 4318"
           ports: [{ name: http, containerPort: 4318 }]
           volumeMounts:
             - name: python-code
@@ -473,7 +507,7 @@ spec:
             {{- toYaml .Values.otelCollector.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code
@@ -501,7 +535,10 @@ spec:
       containers:
         - name: indigo-analytics
           image: {{ .Values.images.python }}
-          command: ["sh", "-c", "pip install -r /app/requirements.txt && uvicorn /app/indigo_analytics_main.py:app --host 0.0.0.0 --port 8089"]
+          command:
+            - "sh"
+            - "-c"
+            - "export PYTHONPATH=/tmp/pkg:/app && pip install --no-cache-dir --target /tmp/pkg fastapi uvicorn[standard] httpx pydantic && python3 -m uvicorn indigo_analytics_main:app --host 0.0.0.0 --port 8089"
           ports: [{ name: http, containerPort: 8089 }]
           volumeMounts:
             - name: python-code
@@ -510,7 +547,7 @@ spec:
             {{- toYaml .Values.indigoAnalytics.resources | nindent 12 }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 5
       volumes:
         - name: python-code

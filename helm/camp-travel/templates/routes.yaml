@@ -1,6 +1,6 @@
 {{- if .Values.ingress.enabled }}
 {{- if .Values.ingress.openShiftRoute }}
-apiVersion: route.route.openshift.io/v1
+apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: camp-experience-ui
@@ -16,7 +16,7 @@ spec:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
 ---
-apiVersion: route.route.openshift.io/v1
+apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: camp-api-gw
