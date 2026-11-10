@@ -53,11 +53,11 @@ Every feature identified during the survey phase is enumerated below and mapped 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| E2E | E2E Testing Track | Design comprehensive 4-tier requirement-driven E2E test suite and test runner; publish `TEST_READY.md` | none | IN_PROGRESS |
+| E2E | E2E Testing Track | Design comprehensive 4-tier requirement-driven E2E test suite and test runner; publish `TEST_INFRA.md` | none | DONE |
 | M1 | Packaging & Dev Experience | Implement `pyproject.toml`, standalone CLI showcase runner (`scripts/run_showcase.py`), test runner script (`run_tests.sh`), and stage baseline git changes | none | DONE |
-| M2 | Consul Fabric Enablement & Gateways | Validate and polish Consul 2.1 CRDs, Envoy gateway configs, Docker Compose 14-service stack, and Helm charts | M1 | IN_PROGRESS |
-| M3 | Agents, MCP Tools & 5-Act Flow | Complete and polish 5-Act interactive governance demonstration flow across agents, MCP tools, and Web UI | M1, M2 | PLANNED |
-| M4 | Final Milestone (E2E Pass & Hardening) | Phase 1: Pass 100% of E2E test suite (Tiers 1-4). Phase 2: Tier 5 adversarial coverage hardening | M3, E2E | PLANNED |
+| M2 | Consul Fabric Enablement & Gateways | Validate and polish Consul 2.1 CRDs, Envoy gateway configs, Docker Compose 14-service stack, and Helm charts | M1 | DONE |
+| M3 | Agents, MCP Tools & 5-Act Flow | Complete and polish 5-Act interactive governance demonstration flow across agents, MCP tools, and Web UI | M1, M2 | DONE |
+| M4 | Final Milestone (E2E Pass & Hardening) | Phase 1: Pass 100% of E2E test suite (Tiers 1-4). Phase 2: Tier 5 adversarial coverage hardening (286/286 passing) | M3, E2E | DONE |
 
 ## Interface Contracts
 
