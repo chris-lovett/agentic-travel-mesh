@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-travel-mesh"
+version = "2.1.0"
+description = "Consul Agentic Runtime Fabric showcase application demonstrating multi-agent travel governance"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "HashiCorp & IBM Ecosystem Team" }
+]
+keywords = [
+    "consul",
+    "agentic-fabric",
+    "mcp",
+    "model-context-protocol",
+    "multi-agent",
+    "fastapi",
+    "envoy",
+    "spiffe",
+    "obo",
+    "governance"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.6.0",
+    "jinja2>=3.1.3",
+    "python-multipart>=0.0.9",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+camp-showcase = "scripts.run_showcase:main"
+travel-showcase = "scripts.run_showcase:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "agents*",
+    "frontend*",
+    "llm_backend*",
+    "mcp_tools*",
+    "observability*",
+    "scripts*",
+]
+exclude = [
+    "tests*",
+    "helm*",
+    "gateways*",
+]
+
+[tool.setuptools.package-data]
+frontend = ["static/*", "static/**/*"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+addopts = "-v --tb=short"
+markers = [
+    "tier1: Tier 1 Feature Coverage Tests",
+    "tier2: Tier 2 Boundary & Corner Case Tests",
+    "tier3: Tier 3 Cross-Feature Combination Tests",
+    "tier4: Tier 4 Real-World 5-Act Scenario Tests",
+    "governance: Policy, OBO, HITL, and circuit breaker tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311"]

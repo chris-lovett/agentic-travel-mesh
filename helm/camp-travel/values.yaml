@@ -2,6 +2,24 @@ global:
   datacenter: dc1
   domain: consul
 
+# Consul 2.1 Agentic Runtime Fabric (Enterprise) Configuration
+# Prerequisite: $ consul operator feature set consul-ai enabled
+ai:
+  enabled: true
+  featureGate: "consul-ai"
+  registry: "icr.io/hashicorp-enterprise"
+  version: "2.1.0"
+  # Official Consul 2.1 Agentic Runtime Fabric component images
+  agent:
+    image: "icr.io/hashicorp-enterprise/csl-mcp-sc:2.1.0"
+  inferenceGateway:
+    image: "icr.io/hashicorp-enterprise/csl-inf-rt:2.1.0"
+    processorImage: "icr.io/hashicorp-enterprise/csl-ig-pro:2.1.0"
+  analytics:
+    image: "icr.io/hashicorp-enterprise/csl-ag-ana:2.1.0"
+    spanRelayImage: "icr.io/hashicorp-enterprise/csl-nod-rly:2.1.0"
+    bullmqQueueName: "consul-ai-cycle-detection"
+
 # Container image defaults
 images:
   python: "docker.io/library/python:3.11-slim"
@@ -31,61 +49,67 @@ apiGw:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 3. Travel Orchestrator Agent
+# 3. Travel Orchestrator Agent (ai-agent)
 orchestrator:
   name: travel-orchestrator
+  aiRole: "ai-agent"
   port: 8080
   replicaCount: 1
   resources:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 4. Booking Sub-Agent
+# 4. Booking Sub-Agent (ai-agent)
 bookingAgent:
   name: booking-agent
+  aiRole: "ai-agent"
   port: 8086
   replicaCount: 1
   resources:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 5. Weather Sub-Agent
+# 5. Weather Sub-Agent (ai-agent)
 weatherAgent:
   name: weather-agent
+  aiRole: "ai-agent"
   port: 8087
   replicaCount: 1
   resources:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 6. Hotel MCP Tool
+# 6. Hotel MCP Tool (mcp-server)
 hotelMcp:
   name: hotel-mcp
+  aiRole: "mcp-server"
   port: 8083
   replicaCount: 1
   resources:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 7. Flight MCP Tool
+# 7. Flight MCP Tool (mcp-server)
 flightMcp:
   name: flight-mcp
+  aiRole: "mcp-server"
   port: 8084
   replicaCount: 1
   resources:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 8. Weather MCP Tool
+# 8. Weather MCP Tool (mcp-server)
 weatherMcp:
   name: weather-mcp
+  aiRole: "mcp-server"
   port: 8082
   replicaCount: 1
   resources:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 9. travel-igw (Envoy AI Gateway for Model Access)
+# 9. travel-igw (AI Inference Gateway / csl-inf-rt)
 travelIgw:
   name: travel-igw
   port: 10001
@@ -95,16 +119,17 @@ travelIgw:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 10. Foundation Model / Ollama Backend
+# 10. Foundation Model Backend (inference-model)
 llmBackend:
   name: llm-backend
+  aiRole: "inference-model"
   port: 8081
   replicaCount: 1
   resources:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 11. Terminating Gateway (Vault Credential Injection for External MCP)
+# 11. Terminating Gateway (Vault Credential Injection for External MCP & External Models)
 terminatingGw:
   name: terminating-gw
   port: 10002
@@ -114,16 +139,17 @@ terminatingGw:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 12. External MCP Server
+# 12. External MCP Server (mcp-server)
 externalMcp:
   name: external-mcp
+  aiRole: "mcp-server"
   port: 8088
   replicaCount: 1
   resources:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 13. AI Observability: OpenTelemetry Collector & Span Relay
+# 13. AI Observability: OpenTelemetry Collector & Span Relay (csl-nod-rly)
 otelCollector:
   name: otel-collector
   port: 4318
@@ -132,7 +158,7 @@ otelCollector:
     limits: { cpu: "250m", memory: "256Mi" }
     requests: { cpu: "30m", memory: "64Mi" }
 
-# 14. INDIGO Analytic Engine
+# 14. Agentic Analytics / INDIGO Analytic Engine (csl-ag-ana)
 indigoAnalytics:
   name: indigo-analytics
   port: 8089

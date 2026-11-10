@@ -1,5 +1,6 @@
 # ---------------------------------------------------------------------------
-# Consul 2.1 Service Mesh & CAMP Agentic Fabric Configuration Entries
+# Consul 2.1 Service Mesh & Agentic Runtime Fabric Configuration Entries
+# Requires Feature Gate: $ consul operator feature set consul-ai enabled
 # ---------------------------------------------------------------------------
 
 apiVersion: consul.hashicorp.com/v1alpha1
@@ -16,59 +17,112 @@ metadata:
 spec:
   protocol: http
 ---
+# AI Agent Workload: Travel Orchestrator (ai-agent + OAuth OBO + csl-mcp-sc Unix Socket ext-proc)
 apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
   name: {{ .Values.orchestrator.name }}
+  annotations:
+    consul.hashicorp.com/ai-role: "ai-agent"
+    consul.hashicorp.com/oauth-client-enabled: "true"
 spec:
   protocol: http
+  envoyExtensions:
+    - name: builtin/ext-proc
+      arguments:
+        processorTarget: "unix:///var/run/consul/csl-mcp-sc.sock"
+        messageTimeout: "5s"
 ---
+# AI Agent Workload: Booking Agent (ai-agent + OAuth OBO + csl-mcp-sc Unix Socket ext-proc)
 apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
   name: {{ .Values.bookingAgent.name }}
+  annotations:
+    consul.hashicorp.com/ai-role: "ai-agent"
+    consul.hashicorp.com/oauth-client-enabled: "true"
 spec:
   protocol: http
+  envoyExtensions:
+    - name: builtin/ext-proc
+      arguments:
+        processorTarget: "unix:///var/run/consul/csl-mcp-sc.sock"
+        messageTimeout: "5s"
 ---
+# AI Agent Workload: Weather Agent (ai-agent + OAuth OBO + csl-mcp-sc Unix Socket ext-proc)
 apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
   name: {{ .Values.weatherAgent.name }}
+  annotations:
+    consul.hashicorp.com/ai-role: "ai-agent"
+    consul.hashicorp.com/oauth-client-enabled: "true"
 spec:
   protocol: http
+  envoyExtensions:
+    - name: builtin/ext-proc
+      arguments:
+        processorTarget: "unix:///var/run/consul/csl-mcp-sc.sock"
+        messageTimeout: "5s"
 ---
+# MCP Server Workload: Hotel Booking MCP (mcp-server + OAuth OBO)
 apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
   name: {{ .Values.hotelMcp.name }}
+  annotations:
+    consul.hashicorp.com/ai-role: "mcp-server"
+    consul.hashicorp.com/oauth-client-enabled: "true"
 spec:
   protocol: http
 ---
+# MCP Server Workload: Flight Booking MCP (mcp-server + OAuth OBO)
 apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
   name: {{ .Values.flightMcp.name }}
+  annotations:
+    consul.hashicorp.com/ai-role: "mcp-server"
+    consul.hashicorp.com/oauth-client-enabled: "true"
 spec:
   protocol: http
 ---
+# MCP Server Workload: Weather MCP (mcp-server + OAuth OBO)
 apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
   name: {{ .Values.weatherMcp.name }}
+  annotations:
+    consul.hashicorp.com/ai-role: "mcp-server"
+    consul.hashicorp.com/oauth-client-enabled: "true"
 spec:
   protocol: http
 ---
+# AI Inference Gateway (inference-gateway + csl-ig-pro Unix Socket ext-proc)
 apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
   name: {{ .Values.travelIgw.name }}
+  annotations:
+    consul.hashicorp.com/service-kind: "inference-gateway"
+    consul.hashicorp.com/ai-observability-tracing: "enabled"
+    consul.hashicorp.com/ai-otlp-endpoint: "http://{{ .Values.otelCollector.name }}:4318"
 spec:
   protocol: http
+  envoyExtensions:
+    - name: builtin/ext-proc
+      arguments:
+        processorTarget: "unix:///var/run/consul/csl-ig-pro.sock"
+        messageTimeout: "15s"
 ---
+# Inference Model Workload: Foundation Model Backend (inference-model)
 apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
   name: {{ .Values.llmBackend.name }}
+  annotations:
+    consul.hashicorp.com/ai-role: "inference-model"
+    consul.hashicorp.com/ai-capabilities: "chat,reasoning,tool-use"
 spec:
   protocol: http
 ---
@@ -83,6 +137,8 @@ apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
   name: {{ .Values.otelCollector.name }}
+  annotations:
+    consul.hashicorp.com/ai-component: "csl-nod-rly"
 spec:
   protocol: http
 ---
@@ -90,5 +146,95 @@ apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
   name: {{ .Values.indigoAnalytics.name }}
+  annotations:
+    consul.hashicorp.com/ai-component: "csl-ag-ana"
 spec:
   protocol: http
+---
+# ---------------------------------------------------------------------------
+# Consul 2.1 Zero-Trust ServiceIntentions for AI Agents, MCP Servers & Models
+# Note: Network reachability (ServiceIntentions) is separate from MCP Sidecar
+# per-tool policies, OBO delegated user authority, and HITL approvals.
+# ---------------------------------------------------------------------------
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: orchestrator-intentions
+spec:
+  destination:
+    name: {{ .Values.orchestrator.name }}
+  sources:
+    - name: {{ .Values.apiGw.name }}
+      action: allow
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: booking-agent-intentions
+spec:
+  destination:
+    name: {{ .Values.bookingAgent.name }}
+  sources:
+    - name: {{ .Values.orchestrator.name }}
+      action: allow
+    - name: {{ .Values.experienceUI.name }}
+      action: allow
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: weather-agent-intentions
+spec:
+  destination:
+    name: {{ .Values.weatherAgent.name }}
+  sources:
+    - name: {{ .Values.orchestrator.name }}
+      action: allow
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: hotel-mcp-intentions
+spec:
+  destination:
+    name: {{ .Values.hotelMcp.name }}
+  sources:
+    - name: {{ .Values.bookingAgent.name }}
+      action: allow
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: flight-mcp-intentions
+spec:
+  destination:
+    name: {{ .Values.flightMcp.name }}
+  sources:
+    - name: {{ .Values.bookingAgent.name }}
+      action: allow
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: weather-mcp-intentions
+spec:
+  destination:
+    name: {{ .Values.weatherMcp.name }}
+  sources:
+    - name: {{ .Values.weatherAgent.name }}
+      action: allow
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: travel-igw-intentions
+spec:
+  destination:
+    name: {{ .Values.travelIgw.name }}
+  sources:
+    - name: {{ .Values.orchestrator.name }}
+      action: allow
+    - name: {{ .Values.weatherAgent.name }}
+      action: allow
+    - name: {{ .Values.bookingAgent.name }}
+      action: allow

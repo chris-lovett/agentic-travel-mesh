@@ -16,8 +16,12 @@ services:
     environment:
       - API_GATEWAY_URL=http://api-gw:10000
       - BOOKING_AGENT_URL=http://booking-agent:8086
+      - INDIGO_ANALYTICS_URL=http://indigo-analytics:8089
+      - OTEL_COLLECTOR_URL=http://otel-collector:4318
     depends_on:
       - api-gw
+      - indigo-analytics
+      - otel-collector
 
   # 2. Ingress API Gateway (Envoy)
   api-gw:
@@ -95,6 +99,9 @@ services:
              uvicorn mcp_tools.hotel_booking.main:app --host 0.0.0.0 --port 8083"
     ports:
       - "8083:8083"
+    environment:
+      - OTEL_COLLECTOR_URL=http://otel-collector:4318
+      - INDIGO_ANALYTICS_URL=http://indigo-analytics:8089
 
   # 7. Flight Booking MCP Tool
   flight-mcp:
@@ -108,6 +115,9 @@ services:
              uvicorn mcp_tools.flight_booking.main:app --host 0.0.0.0 --port 8084"
     ports:
       - "8084:8084"
+    environment:
+      - OTEL_COLLECTOR_URL=http://otel-collector:4318
+      - INDIGO_ANALYTICS_URL=http://indigo-analytics:8089
 
   # 8. Weather MCP Server
   weather-mcp:
@@ -121,6 +131,9 @@ services:
              uvicorn mcp_tools.weather_server.main:app --host 0.0.0.0 --port 8082"
     ports:
       - "8082:8082"
+    environment:
+      - OTEL_COLLECTOR_URL=http://otel-collector:4318
+      - INDIGO_ANALYTICS_URL=http://indigo-analytics:8089
 
   # 9. travel-igw (Envoy AI Gateway for Model Access with Token Rate Limiting & Vault Key Injection)
   travel-igw:
@@ -147,6 +160,9 @@ services:
              uvicorn llm_backend.main:app --host 0.0.0.0 --port 8081"
     ports:
       - "8081:8081"
+    environment:
+      - OTEL_COLLECTOR_URL=http://otel-collector:4318
+      - INDIGO_ANALYTICS_URL=http://indigo-analytics:8089
 
   # 11. Terminating Gateway (Vault Credential Injection for External Partner MCP Tools)
   terminating-gw:
@@ -186,6 +202,8 @@ services:
              uvicorn observability.otel.main:app --host 0.0.0.0 --port 4318"
     ports:
       - "4318:4318"
+    environment:
+      - INDIGO_ANALYTICS_URL=http://indigo-analytics:8089
 
   # 14. INDIGO Analytic Engine (Governance, Compliance, Security)
   indigo-analytics:

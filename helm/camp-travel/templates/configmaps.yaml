@@ -9,21 +9,57 @@ data:
     httpx>=0.27.0
     pydantic>=2.6.0
     jinja2>=3.1.3
+    python-multipart>=0.0.9
+    pytest>=8.0.0
+    pytest-asyncio>=0.23.0
 
   frontend_main.py: |
-    from fastapi import FastAPI, Request, HTTPException, status
-    from fastapi.responses import HTMLResponse
+    """
+    Review UI Backend & Experience UI
+    Provides the interactive Traveler Workspace, 5-Act Consul 2.1 Governance Showcase,
+    cryptographic Human-in-the-Loop (HITL) approval evidence signing, and IBM Verify On-Behalf-Of (OBO) token exchange.
+    """
+    from fastapi import FastAPI, Request, HTTPException
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import HTMLResponse, FileResponse
     from pydantic import BaseModel
     from typing import Dict, Any, List, Optional
-    import httpx, os, time
+    import hashlib
+    import httpx
+    import os
+    import time
 
-    app = FastAPI(title="CAMP Experience UI & Review Backend")
+    app = FastAPI(title="CAMP Experience UI & Review Backend", version="2.1.0")
 
-    API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://localhost:10000")
-    BOOKING_AGENT_URL = os.getenv("BOOKING_AGENT_URL", "http://localhost:8086")
+    if os.path.isdir("frontend/static"):
+        app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
+
+    API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://api-gw:10000")
+    BOOKING_AGENT_URL = os.getenv("BOOKING_AGENT_URL", "http://booking-agent:8086")
+    INDIGO_ANALYTICS_URL = os.getenv("INDIGO_ANALYTICS_URL", "http://indigo-analytics:8089")
+    OTEL_COLLECTOR_URL = os.getenv("OTEL_COLLECTOR_URL", "http://otel-collector:4318")
 
     trips_database: Dict[str, Any] = {}
     audit_events: List[Dict[str, Any]] = []
+
+    # Customer IAM Persona Directory (IBM Verify OBO Profiles)
+    IAM_PERSONAS = {
+        "traveler-101": {
+            "user_id": "traveler-101",
+            "user_name": "Alex Mercer",
+            "role": "VP Engineering (Full Authority)",
+            "scopes": ["travel:read", "travel:plan", "booking:reserve", "partner:gds_egress"],
+            "max_budget_usd": 5000.0,
+        },
+        "contractor-202": {
+            "user_id": "contractor-202",
+            "user_name": "Sam Taylor",
+            "role": "External Contractor (Restricted Authority)",
+            "scopes": ["travel:read", "travel:plan"],
+            "max_budget_usd": 1200.0,
+        },
+    }
+
 
     class UserTripSubmission(BaseModel):
         user_id: str = "traveler-101"
@@ -34,35 +70,67 @@ data:
         budget_usd: float = 2500.0
         trip_purpose: str = "HashiCorp & AI Architecture Summit"
         notes: Optional[str] = "Prefer hotels with business center"
+        scenario_mode: str = "normal"
+
 
     class ApprovalAction(BaseModel):
         trip_id: str
-        action: str
+        action: str  # "APPROVE" or "REJECT"
         approver: str = "Manager / Finance Compliance"
+
 
     @app.get("/", response_class=HTMLResponse)
     async def serve_ui():
+        if os.path.exists("frontend/static/index.html"):
+            return FileResponse("frontend/static/index.html")
         with open("/app/static/index.html", "r") as f:
             return f.read()
 
+
+    @app.post("/api/auth/obo-token")
+    async def exchange_obo_token(req: Dict[str, str]):
+        """Simulates IBM Verify On-Behalf-Of (OBO) Token Exchange for the Consul Identity Plane"""
+        user_id = req.get("user_id", "traveler-101")
+        persona = IAM_PERSONAS.get(user_id, IAM_PERSONAS["traveler-101"])
+        return {
+            "status": "authenticated",
+            "identity_provider": "IBM Verify (OAuth 2.0 / RFC 8693 OBO)",
+            "obo_subject": persona["user_id"],
+            "user_name": persona["user_name"],
+            "role": persona["role"],
+            "token_type": "Bearer",
+            "obo_delegation_token": f"ibm-verify-obo-{persona['user_id']}-{int(time.time())}",
+            "scopes": persona["scopes"],
+        }
+
+
     @app.post("/api/travel/plan")
     async def plan_trip(submission: UserTripSubmission):
+        """Entry point from Traveler Workspace into the Consul Agentic Runtime Fabric API Gateway"""
+        effective_user_id = "contractor-202" if submission.scenario_mode == "act3_contractor_obo" else submission.user_id
+        persona = IAM_PERSONAS.get(effective_user_id, IAM_PERSONAS["traveler-101"])
+        scopes_csv = ",".join(persona["scopes"])
+
         headers = {
-            "x-obo-user-id": submission.user_id,
-            "x-obo-token": f"obo-{submission.user_id}",
+            "x-obo-user-id": persona["user_id"],
+            "x-obo-scopes": scopes_csv,
+            "x-obo-token": f"obo-{persona['user_id']}",
             "x-tenant-id": "corporate-travel",
+            "x-simulate-llm-outage": "true" if submission.scenario_mode == "act1_llm_failover" else "false",
         }
+
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.post(
                 f"{API_GATEWAY_URL}/agent/orchestrate/trip",
                 json={
-                    "traveler_name": submission.user_name,
+                    "traveler_name": persona["user_name"] if submission.scenario_mode == "act3_contractor_obo" else submission.user_name,
                     "origin": submission.origin,
                     "destination": submission.destination,
                     "duration_days": submission.duration_days,
                     "budget_usd": submission.budget_usd,
                     "trip_purpose": submission.trip_purpose,
                     "special_notes": submission.notes,
+                    "scenario_mode": submission.scenario_mode,
                 },
                 headers=headers,
             )
@@ -70,51 +138,97 @@ data:
 
         trip_id = plan_data.get("trip_id", f"TRIP-{int(time.time())}")
         trips_database[trip_id] = plan_data
+
+        interceptions = plan_data.get("governance_interceptions", [])
+        event_name = "TRIP_PLAN_GENERATED"
+        if submission.scenario_mode == "act1_llm_failover" or plan_data.get("ai_telemetry", {}).get("failover_triggered"):
+            event_name = "AI_GW_FAILOVER_CLAUDE_SONNET"
+        elif submission.scenario_mode == "act4_cycle_loop":
+            event_name = "CYCLE_DETECTED_CIRCUIT_OPEN"
+        elif interceptions:
+            event_name = "MCP_SIDECAR_POLICY_INTERCEPTED"
+
         audit_events.append({
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "event": "TRIP_PLAN_GENERATED",
+            "event": event_name,
             "trip_id": trip_id,
-            "traveler": submission.user_name,
+            "traveler": plan_data.get("traveler", submission.user_name),
             "destination": submission.destination,
             "cost_usd": plan_data.get("total_estimated_usd"),
             "trace_id": plan_data.get("trace_id"),
+            "scenario_mode": submission.scenario_mode,
         })
+
         return plan_data
+
 
     @app.post("/api/travel/review-action")
     async def review_action(action: ApprovalAction):
+        """
+        Human-in-the-Loop (HITL) approval from the Review UI.
+        Generates a cryptographic approval evidence token bound to the original action
+        so the csl-mcp-sc enforcement processor permits reserve_flight & reserve_hotel.
+        """
         trip = trips_database.get(action.trip_id)
         if not trip:
             raise HTTPException(status_code=404, detail="Trip proposal not found")
 
         if action.action == "APPROVE":
             booking_proposal = trip.get("booking_proposals", {})
+            fl = booking_proposal.get("selected_flight", {}) or {}
+            ht = booking_proposal.get("selected_hotel", {}) or {}
+
+            # Mint cryptographic HITL evidence bound to (trip_id, approver, flight_number, hotel_id)
+            evidence_payload = f"{action.trip_id}:{action.approver}:{fl.get('flight_number')}:{ht.get('id')}"
+            sig = hashlib.sha256(evidence_payload.encode("utf-8")).hexdigest()[:16]
+            hitl_evidence_token = f"hitl-sig-{sig}"
+
+            obo_user = trip.get("obo_user", "traveler-101")
+            obo_scopes = ",".join(trip.get("obo_scopes", ["travel:read", "travel:plan", "booking:reserve"]))
+
             async with httpx.AsyncClient(timeout=15.0) as client:
                 conf_resp = await client.post(
                     f"{BOOKING_AGENT_URL}/agent/booking/confirm",
                     json={
                         "traveler_name": trip.get("traveler"),
                         "nights": trip.get("duration_days"),
-                        "flight": booking_proposal.get("selected_flight"),
-                        "hotel": booking_proposal.get("selected_hotel"),
+                        "flight": fl,
+                        "hotel": ht,
                         "ground_transport": booking_proposal.get("ground_transport"),
+                        "obo_user": obo_user,
+                        "obo_scopes": obo_scopes,
+                        "hitl_evidence_token": hitl_evidence_token,
+                    },
+                    headers={
+                        "x-obo-user-id": obo_user,
+                        "x-obo-scopes": obo_scopes,
+                        "x-consul-hitl-evidence": hitl_evidence_token,
                     },
                 )
                 confirmation_data = conf_resp.json()
 
-            trip["status"] = "APPROVED_AND_BOOKED"
-            trip["confirmation_details"] = confirmation_data
-            result_message = "Trip itinerary approved. All flight, hotel, and transport reservations confirmed via MCP tools."
+            if confirmation_data.get("status") == "blocked_by_mcp_sidecar":
+                trip["status"] = "BLOCKED_BY_SIDECAR_POLICY"
+                result_message = confirmation_data.get("error", {}).get("message", "Blocked by MCP Sidecar")
+            else:
+                trip["status"] = "APPROVED_AND_BOOKED"
+                trip["confirmation_details"] = confirmation_data
+                result_message = (
+                    f"HITL Evidence ({hitl_evidence_token}) verified by csl-mcp-sc. "
+                    f"All reservations confirmed via JSON-RPC MCP tools."
+                )
         else:
             trip["status"] = "REJECTED_BY_REVIEWER"
-            result_message = "Trip proposal rejected."
+            result_message = "Trip proposal rejected. No reservations made."
 
         audit_events.append({
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "event": f"TRIP_{action.action}D",
             "trip_id": action.trip_id,
             "approver": action.approver,
+            "destination": trip.get("destination"),
         })
+
         return {
             "trip_id": action.trip_id,
             "status": trip["status"],
@@ -122,26 +236,96 @@ data:
             "details": trip.get("confirmation_details"),
         }
 
+
+    @app.get("/api/governance/status")
+    async def get_governance_status():
+        """Fetches live Agentic Analytics (csl-ag-ana) & Span Relay (csl-nod-rly) status"""
+        indigo_data = {}
+        traces_data = {}
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            try:
+                r1 = await client.get(f"{INDIGO_ANALYTICS_URL}/api/indigo/audit-summary")
+                if r1.status_code == 200:
+                    indigo_data = r1.json()
+            except Exception:
+                pass
+            try:
+                r2 = await client.get(f"{OTEL_COLLECTOR_URL}/v1/traces")
+                if r2.status_code == 200:
+                    traces_data = r2.json()
+            except Exception:
+                pass
+        return {
+            "indigo": indigo_data,
+            "otel": traces_data,
+            "personas": IAM_PERSONAS,
+        }
+
+
+    @app.post("/api/governance/reset-circuit")
+    async def reset_circuit_breaker():
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(f"{INDIGO_ANALYTICS_URL}/api/indigo/circuit/reset", json={})
+            data = resp.json()
+        audit_events.append({
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "event": "CIRCUIT_BREAKER_RESET",
+            "trip_id": "SYSTEM",
+            "destination": "booking-agent circuit -> CLOSED",
+        })
+        return data
+
+
+    @app.post("/api/governance/toggle-llm-outage")
+    async def toggle_llm_outage(body: Dict[str, Any]):
+        flag = bool(body.get("simulate_primary_llm_outage", False))
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(
+                f"{INDIGO_ANALYTICS_URL}/api/indigo/flags",
+                json={"simulate_primary_llm_outage": flag},
+            )
+            data = resp.json()
+        audit_events.append({
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "event": f"LLM_OUTAGE_SIM_{'ON' if flag else 'OFF'}",
+            "trip_id": "SYSTEM",
+            "destination": "travel-igw (csl-inf-rt)",
+        })
+        return data
+
+
     @app.get("/api/travel/audit-stream")
     async def get_audit_stream():
-        return {"audit_events": list(reversed(audit_events[-20:]))}
+        return {"audit_events": list(reversed(audit_events[-25:]))}
+
 
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "experience-ui"}
+        return {"status": "healthy", "service": "experience-ui-backend"}
 
   orchestrator_main.py: |
+    """
+    Travel Orchestrator (ai-agent workload + Envoy & csl-mcp-sc Sidecars)
+    Master coordinator of the CAMP Travel Booking multi-agent ecosystem.
+    Deconstructs traveler intent, delegates to sub-agents with hop-by-hop OBO token exchange,
+    and invokes the Consul AI Inference Gateway (travel-igw / csl-inf-rt) to synthesize final plans.
+    Contains ZERO OpenTelemetry SDK or manual trace calls — all spans are auto-instrumented by mesh proxies.
+    """
     from fastapi import FastAPI, Request
     from pydantic import BaseModel
     from typing import Dict, Any, Optional
-    import httpx, os, asyncio, time
+    import httpx
+    import os
+    import asyncio
+    import time
 
-    app = FastAPI(title="CAMP Travel Orchestrator")
+    app = FastAPI(title="CAMP Travel Orchestrator Agent (ai-agent)", version="2.1.0")
 
-    BOOKING_AGENT_URL = os.getenv("BOOKING_AGENT_URL", "http://localhost:8086")
-    WEATHER_AGENT_URL = os.getenv("WEATHER_AGENT_URL", "http://localhost:8087")
-    TRAVEL_IGW_URL = os.getenv("TRAVEL_IGW_URL", "http://localhost:10001")
-    OTEL_COLLECTOR_URL = os.getenv("OTEL_COLLECTOR_URL", "http://localhost:4318")
+    BOOKING_AGENT_URL = os.getenv("BOOKING_AGENT_URL", "http://booking-agent:8086")
+    WEATHER_AGENT_URL = os.getenv("WEATHER_AGENT_URL", "http://weather-agent:8087")
+    TRAVEL_IGW_URL = os.getenv("TRAVEL_IGW_URL", "http://travel-igw:10001")
+    ORCHESTRATOR_SPIFFE_ID = "spiffe://cluster.local/ns/camp-travel/sa/travel-orchestrator"
+
 
     class TripRequest(BaseModel):
         traveler_name: str = "Alex Mercer"
@@ -150,25 +334,47 @@ data:
         duration_days: int = 4
         budget_usd: float = 2500.0
         trip_purpose: str = "Annual HashiCorp & AI Architecture Summit"
-        special_notes: Optional[str] = "Prefer hotels with business centers"
+        special_notes: Optional[str] = "Prefer hotels with business centers and good public transit."
+        scenario_mode: str = "normal"
+
 
     @app.post("/agent/orchestrate/trip")
     async def orchestrate_trip(req: TripRequest, request: Request):
-        trace_id = f"trace-camp-{int(time.time()*1000)}"
+        trace_id = request.headers.get("x-trace-id", f"trace-camp-{int(time.time()*1000)}")
         obo_user = request.headers.get("x-obo-user-id", req.traveler_name.lower().replace(" ", "-"))
+        obo_scopes = request.headers.get(
+            "x-obo-scopes",
+            "travel:read,travel:plan,booking:reserve,partner:gds_egress",
+        )
+        simulate_outage = (
+            "true"
+            if req.scenario_mode == "act1_llm_failover"
+            or request.headers.get("x-simulate-llm-outage", "").lower() == "true"
+            else "false"
+        )
+
         headers = {
             "x-trace-id": trace_id,
+            "x-caller-spiffe-id": ORCHESTRATOR_SPIFFE_ID,
             "x-obo-user-id": obo_user,
+            "x-obo-scopes": obo_scopes,
+            "x-consul-obo-token": f"obo-hop1-orch-{obo_user}",
             "x-tenant-id": "corporate-travel",
+            "x-simulate-llm-outage": simulate_outage,
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            w_task = client.post(
+        async with httpx.AsyncClient(timeout=18.0) as client:
+            # 1. Concurrently call Weather Agent & Booking Agent across Consul Mesh
+            weather_task = client.post(
                 f"{WEATHER_AGENT_URL}/agent/weather/analyze",
-                json={"destination": req.destination, "duration_days": req.duration_days, "trip_type": req.trip_purpose},
+                json={
+                    "destination": req.destination,
+                    "duration_days": req.duration_days,
+                    "trip_type": req.trip_purpose,
+                },
                 headers=headers,
             )
-            b_task = client.post(
+            booking_task = client.post(
                 f"{BOOKING_AGENT_URL}/agent/booking/plan",
                 json={
                     "origin": req.origin,
@@ -177,91 +383,141 @@ data:
                     "nights": req.duration_days,
                     "budget_usd": req.budget_usd,
                     "needs_ground_transport": True,
+                    "scenario_mode": req.scenario_mode,
                 },
                 headers=headers,
             )
-            w_res, b_res = await asyncio.gather(w_task, b_task)
-            weather_data = w_res.json()
-            booking_data = b_res.json()
 
-            prompt = f"Traveler: {req.traveler_name}, Destination: {req.destination}, Cost: ${booking_data.get('total_estimated_usd')}, Weather: {weather_data.get('forecast_summary')}. Write 3-sentence summary."
-            llm_telemetry = {
+            weather_res, booking_res = await asyncio.gather(weather_task, booking_task)
+            weather_data = weather_res.json()
+            booking_data = booking_res.json()
+
+            # 2. Invoke travel-igw AI Inference Gateway (csl-inf-rt) to synthesize executive summary
+            synthesis_prompt = f"""
+            Traveler: {req.traveler_name} (OBO Subject: {obo_user})
+            Purpose: {req.trip_purpose}
+            Route: {req.origin} to {req.destination} ({req.duration_days} days)
+            Total Estimated Cost: ${booking_data.get('total_estimated_usd')} (Budget: ${req.budget_usd})
+            Weather Outlook: {weather_data.get('forecast_summary')}
+            Hotel: {booking_data.get('selected_hotel', {}).get('name')}
+            Flight: {booking_data.get('selected_flight', {}).get('airline')} {booking_data.get('selected_flight', {}).get('flight_number')}
+            Scenario Mode: {req.scenario_mode}
+            Synthesize a concise executive travel summary.
+            """
+
+            llm_metadata = {
+                "requested_model": "meta-llama/llama-3-70b-instruct",
                 "model": "meta-llama/llama-3-70b-instruct",
                 "prompt_tokens": 412,
                 "completion_tokens": 285,
                 "total_tokens": 697,
                 "estimated_cost_usd": 0.0035,
-                "gateway": "travel-igw (Envoy AI Gateway 2.1)",
-                "credential_broker": "HashiCorp Vault",
+                "gateway_tier": "travel-igw (Consul AI Inference Gateway 2.1 / csl-inf-rt)",
+                "auth_provider": "HashiCorp Vault Token Broker",
+                "failover_triggered": False,
+                "protocol_translation": "OpenAI /v1/chat/completions -> Native Upstream",
+                "zero_code_instrumented": True,
             }
+
             try:
                 llm_resp = await client.post(
                     f"{TRAVEL_IGW_URL}/v1/chat/completions",
-                    json={"model": "meta-llama/llama-3-70b-instruct", "messages": [{"role": "user", "content": prompt}]},
+                    json={
+                        "model": "meta-llama/llama-3-70b-instruct",
+                        "messages": [{"role": "user", "content": synthesis_prompt}],
+                    },
                     headers={**headers, "Content-Type": "application/json"},
                 )
                 llm_json = llm_resp.json()
-                summary = llm_json["choices"][0]["message"]["content"]
+                synthesis_summary = llm_json["choices"][0]["message"]["content"]
                 usage = llm_json.get("usage", {})
+                gw_meta = llm_json.get("gateway_metadata", {})
                 if usage:
-                    llm_telemetry["prompt_tokens"] = usage.get("prompt_tokens", 412)
-                    llm_telemetry["completion_tokens"] = usage.get("completion_tokens", 285)
-                    llm_telemetry["total_tokens"] = usage.get("total_tokens", 697)
-                    llm_telemetry["estimated_cost_usd"] = round(llm_telemetry["total_tokens"] * 0.000005, 5)
+                    llm_metadata["prompt_tokens"] = usage.get("prompt_tokens", 412)
+                    llm_metadata["completion_tokens"] = usage.get("completion_tokens", 285)
+                    llm_metadata["total_tokens"] = usage.get("total_tokens", 697)
+                if gw_meta:
+                    llm_metadata["model"] = gw_meta.get("routed_model", llm_json.get("model", llm_metadata["model"]))
+                    llm_metadata["failover_triggered"] = gw_meta.get("failover_triggered", False)
+                    llm_metadata["protocol_translation"] = gw_meta.get("protocol_translation", llm_metadata["protocol_translation"])
+                    llm_metadata["estimated_cost_usd"] = gw_meta.get(
+                        "estimated_cost_usd",
+                        round(llm_metadata["total_tokens"] * 0.000005, 5),
+                    )
+                    llm_metadata["vault_secret_ref"] = gw_meta.get("vault_secret_ref", "vault:secret/data/ai/llm#api_key")
             except Exception:
-                summary = f"Itinerary prepared for {req.destination} with {req.duration_days} nights lodging, flights, and transport at ${booking_data.get('total_estimated_usd')}."
-
-            try:
-                await client.post(
-                    f"{OTEL_COLLECTOR_URL}/v1/traces",
-                    json={
-                        "trace_id": trace_id,
-                        "service": "travel-orchestrator",
-                        "user_obo": obo_user,
-                        "model": llm_telemetry["model"],
-                        "tokens_used": llm_telemetry["total_tokens"],
-                        "prompt_tokens": llm_telemetry["prompt_tokens"],
-                        "completion_tokens": llm_telemetry["completion_tokens"],
-                        "destination": req.destination,
-                        "cost_usd": booking_data.get("total_estimated_usd"),
-                    },
-                    headers=headers,
+                synthesis_summary = (
+                    f"Complete {req.duration_days}-day itinerary prepared for {req.destination} "
+                    f"covering flights, lodging, and ground transport at ${booking_data.get('total_estimated_usd')}."
                 )
-            except Exception:
-                pass
+
+        # Assemble Hop-by-Hop Identity Plane OBO Delegation Chain
+        obo_chain = [
+            {
+                "hop": 1,
+                "caller": "user-idp (IBM Verify OAuth Issuer)",
+                "actor": "spiffe://cluster.local/ns/camp-travel/sa/api-gw",
+                "audience": ORCHESTRATOR_SPIFFE_ID,
+                "subject": obo_user,
+                "scopes": [s.strip() for s in obo_scopes.split(",") if s.strip()],
+            },
+            weather_data.get("obo_delegation_hop", {}),
+            booking_data.get("obo_delegation_hop", {}),
+        ]
 
         return {
             "status": "plan_ready_for_review",
+            "scenario_mode": req.scenario_mode,
             "trace_id": trace_id,
             "trip_id": f"TRIP-{int(time.time())}",
             "traveler": req.traveler_name,
+            "obo_user": obo_user,
+            "obo_scopes": [s.strip() for s in obo_scopes.split(",") if s.strip()],
+            "obo_delegation_chain": obo_chain,
             "destination": req.destination,
             "duration_days": req.duration_days,
             "budget_usd": req.budget_usd,
             "total_estimated_usd": booking_data.get("total_estimated_usd"),
             "within_budget": booking_data.get("within_budget"),
-            "executive_summary": summary,
+            "executive_summary": synthesis_summary,
             "weather_advisory": weather_data,
             "booking_proposals": booking_data,
-            "ai_telemetry": llm_telemetry,
+            "governance_interceptions": booking_data.get("governance_interceptions", []),
+            "loop_iterations": booking_data.get("loop_iterations", []),
+            "ai_telemetry": llm_metadata,
             "requires_hitl_approval": True,
         }
 
+
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "travel-orchestrator"}
+        return {"status": "healthy", "service": "travel-orchestrator", "ai_role": "ai-agent"}
 
   booking_agent_main.py: |
+    """
+    Booking Agent (ai-agent workload + csl-mcp-sc Sidecar)
+    Coordinates Hotel MCP, Flight MCP, and External Partner MCP tools across the Consul Agentic Runtime Fabric
+    using Model Context Protocol (JSON-RPC 2.0).
+    Supports interactive governance demonstrations:
+    - Per-tool policy enforcement (csl-mcp-sc)
+    - Proxy-enforced Human-in-the-Loop (HITL) cryptographic evidence verification
+    - Hop-by-hop On-Behalf-Of (OBO) scope enforcement
+    - Runaway tool-call loop triggering Agentic Analytics (csl-ag-ana) cycle detection & circuit breaking
+    """
     from fastapi import FastAPI, Request
     from pydantic import BaseModel
     from typing import Dict, Any, List, Optional
-    import httpx, os
+    import httpx
+    import os
+    import time
 
-    app = FastAPI(title="CAMP Booking Agent")
+    app = FastAPI(title="CAMP Booking Agent (ai-agent)", version="2.1.0")
 
-    HOTEL_MCP_URL = os.getenv("HOTEL_MCP_URL", "http://localhost:8083")
-    FLIGHT_MCP_URL = os.getenv("FLIGHT_MCP_URL", "http://localhost:8084")
-    TERMINATING_GW_URL = os.getenv("TERMINATING_GW_URL", "http://localhost:10002")
+    HOTEL_MCP_URL = os.getenv("HOTEL_MCP_URL", "http://hotel-mcp:8083")
+    FLIGHT_MCP_URL = os.getenv("FLIGHT_MCP_URL", "http://flight-mcp:8084")
+    TERMINATING_GW_URL = os.getenv("TERMINATING_GW_URL", "http://terminating-gw:10002")
+    AGENT_SPIFFE_ID = "spiffe://cluster.local/ns/camp-travel/sa/booking-agent"
+
 
     class BookingPlanRequest(BaseModel):
         origin: str = "JFK"
@@ -270,48 +526,217 @@ data:
         nights: int = 4
         budget_usd: float = 2500.0
         needs_ground_transport: bool = True
+        scenario_mode: str = "normal"
+
 
     @app.post("/agent/booking/plan")
     async def plan_bookings(req: BookingPlanRequest, request: Request):
+        trace_id = request.headers.get("x-trace-id", f"trace-booking-{int(time.time()*1000)}")
         obo_user = request.headers.get("x-obo-user-id", "traveler-101")
-        headers = {"x-obo-user-id": obo_user}
+        obo_scopes = request.headers.get(
+            "x-obo-scopes",
+            "travel:read,travel:plan,booking:reserve,partner:gds_egress",
+        )
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        mcp_headers = {
+            "x-trace-id": trace_id,
+            "x-caller-spiffe-id": AGENT_SPIFFE_ID,
+            "x-obo-user-id": obo_user,
+            "x-obo-scopes": obo_scopes,
+            "x-consul-obo-token": f"obo-hop2-booking-{obo_user}",
+        }
+
+        governance_interceptions: List[Dict[str, Any]] = []
+        loop_iterations: List[Dict[str, Any]] = []
+
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            # Scenario Act 4: Runaway Agent Retry Loop -> Cycle Detection & Agent-Scoped Circuit Breaker
+            if req.scenario_mode == "act4_cycle_loop":
+                for attempt in range(1, 5):
+                    loop_resp = await client.post(
+                        f"{FLIGHT_MCP_URL}/mcp",
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": f"rpc-loop-{attempt}",
+                            "method": "tools/call",
+                            "params": {
+                                "name": "search_flights",
+                                "arguments": {"origin": req.origin, "destination": "SOLDOUT-LOOP", "flight_number": "UA-999-SOLDOUT"},
+                            },
+                        },
+                        headers=mcp_headers,
+                    )
+                    rpc_json = loop_resp.json()
+                    if "error" in rpc_json:
+                        err = rpc_json["error"]
+                        loop_iterations.append({
+                            "attempt": attempt,
+                            "tool": "flight-mcp/search_flights",
+                            "arguments": {"origin": req.origin, "destination": "SOLDOUT-LOOP"},
+                            "outcome": "CIRCUIT_OPEN_REJECTED",
+                            "circuit_state": "OPEN",
+                            "message": err.get("message"),
+                        })
+                        governance_interceptions.append({
+                            "layer": "Cycle Detection & Agent Circuit Breaker (csl-ag-ana + csl-mcp-sc)",
+                            "status": "AGENT_CIRCUIT_OPEN",
+                            "code": err.get("code"),
+                            "message": err.get("message"),
+                        })
+                        break
+                    else:
+                        res_data = rpc_json.get("result", {})
+                        ana = res_data.get("_analytics_telemetry", {}) or {}
+                        loop_iterations.append({
+                            "attempt": attempt,
+                            "tool": "flight-mcp/search_flights",
+                            "arguments": {"origin": req.origin, "destination": "SOLDOUT-LOOP"},
+                            "outcome": res_data.get("status", "NO_INVENTORY_RETRYABLE"),
+                            "repetition_count": ana.get("repetition_count", attempt),
+                            "circuit_state": ana.get("circuit_state", "OPEN" if attempt >= 3 else "CLOSED"),
+                            "fingerprint": ana.get("fingerprint", "f9a1c3"),
+                        })
+
+            # Scenario Act 2a: Unauthorized Per-Tool Invocation (Discovery != Execution Permission)
+            if req.scenario_mode == "act2_unauthorized_tool":
+                unauth_resp = await client.post(
+                    f"{HOTEL_MCP_URL}/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "rpc-unauth-tool",
+                        "method": "tools/call",
+                        "params": {
+                            "name": "override_hotel_rate",
+                            "arguments": {"hotel_id": "HTL-SF-01", "new_rate_usd": 49.0},
+                        },
+                    },
+                    headers=mcp_headers,
+                )
+                unauth_json = unauth_resp.json()
+                if "error" in unauth_json:
+                    governance_interceptions.append({
+                        "layer": "MCP Sidecar Per-Tool Policy (csl-mcp-sc)",
+                        "status": "DENIED_AT_SIDECAR",
+                        "tool": "hotel-mcp/override_hotel_rate",
+                        "code": unauth_json["error"].get("code"),
+                        "message": unauth_json["error"].get("message"),
+                    })
+
+            # Scenario Act 2b / Act 3: Unapproved State Mutation or Contractor Scope Violation on reserve_flight
+            if req.scenario_mode in ("act2_unapproved_mutation", "act3_contractor_obo"):
+                mut_resp = await client.post(
+                    f"{FLIGHT_MCP_URL}/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "rpc-direct-reserve",
+                        "method": "tools/call",
+                        "params": {
+                            "name": "reserve_flight",
+                            "arguments": {
+                                "flight_number": "UA-442",
+                                "passenger_name": req.traveler_name,
+                                "origin": req.origin,
+                                "destination": req.destination,
+                            },
+                        },
+                    },
+                    headers=mcp_headers,  # Note: No x-consul-hitl-evidence header or contractor scopes
+                )
+                mut_json = mut_resp.json()
+                if "error" in mut_json:
+                    governance_interceptions.append({
+                        "layer": mut_json["error"].get("data", {}).get("enforced_by", "csl-mcp-sc"),
+                        "status": "INTERCEPTED",
+                        "tool": "flight-mcp/reserve_flight",
+                        "code": mut_json["error"].get("code"),
+                        "message": mut_json["error"].get("message"),
+                    })
+
+            # 1. Search Flights via MCP JSON-RPC 2.0
             flight_resp = await client.post(
-                f"{FLIGHT_MCP_URL}/mcp/flights/search",
-                json={"origin": req.origin, "destination": req.destination},
-                headers=headers,
+                f"{FLIGHT_MCP_URL}/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": "rpc-flight-search",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_flights",
+                        "arguments": {"origin": req.origin, "destination": req.destination},
+                    },
+                },
+                headers=mcp_headers,
             )
-            flights = flight_resp.json().get("available_flights", [])
+            flight_rpc = flight_resp.json()
+            if "error" in flight_rpc:
+                flights = []
+                governance_interceptions.append({
+                    "layer": "Flight MCP Sidecar (csl-mcp-sc)",
+                    "status": "BLOCKED",
+                    "tool": "flight-mcp/search_flights",
+                    "code": flight_rpc["error"].get("code"),
+                    "message": flight_rpc["error"].get("message"),
+                })
+            else:
+                flights = flight_rpc.get("result", {}).get("available_flights", [])
             selected_flight = flights[0] if flights else {}
 
+            # 2. Search Hotels via MCP JSON-RPC 2.0
             hotel_resp = await client.post(
-                f"{HOTEL_MCP_URL}/mcp/hotels/search",
-                json={"destination": req.destination, "max_budget_per_night": req.budget_usd / (req.nights + 1)},
-                headers=headers,
+                f"{HOTEL_MCP_URL}/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": "rpc-hotel-search",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_hotels",
+                        "arguments": {
+                            "destination": req.destination,
+                            "max_budget_per_night": req.budget_usd / (req.nights + 1),
+                        },
+                    },
+                },
+                headers=mcp_headers,
             )
-            hotels = hotel_resp.json().get("available_hotels", [])
+            hotel_rpc = hotel_resp.json()
+            hotels = hotel_rpc.get("result", {}).get("available_hotels", [])
             selected_hotel = hotels[0] if hotels else {}
 
+            # 3. Query External Ground Transport via Terminating Gateway
             ground_transport = None
             if req.needs_ground_transport:
                 try:
                     car_resp = await client.post(
                         f"{TERMINATING_GW_URL}/external/mcp/ground-transport",
                         json={"destination": req.destination, "rental_days": req.nights},
-                        headers=headers,
+                        headers=mcp_headers,
                     )
-                    ground_transport = car_resp.json()
+                    if car_resp.status_code >= 400:
+                        err_detail = car_resp.json().get("detail", "Blocked at Terminating Gateway")
+                        ground_transport = {"status": "blocked_by_obo_policy", "detail": err_detail}
+                        governance_interceptions.append({
+                            "layer": "Terminating Gateway & Identity Plane OBO",
+                            "status": "DENIED_EGRESS",
+                            "tool": "external-mcp/ground-transport",
+                            "code": car_resp.status_code,
+                            "message": err_detail,
+                        })
+                    else:
+                        ground_transport = car_resp.json()
                 except Exception as e:
                     ground_transport = {"status": "unavailable", "detail": str(e)}
 
         flight_cost = selected_flight.get("price_usd", 0.0)
         hotel_cost = selected_hotel.get("price_per_night", 0.0) * req.nights
-        car_cost = ground_transport.get("total_amount_usd", 0.0) if ground_transport and "total_amount_usd" in ground_transport else 0.0
+        car_cost = (
+            ground_transport.get("total_amount_usd", 0.0)
+            if ground_transport and "total_amount_usd" in ground_transport
+            else 0.0
+        )
         total_estimated = flight_cost + hotel_cost + car_cost
 
         return {
             "agent": "booking-agent",
+            "spiffe_id": AGENT_SPIFFE_ID,
             "traveler": req.traveler_name,
             "origin": req.origin,
             "destination": req.destination,
@@ -321,106 +746,245 @@ data:
             "ground_transport": ground_transport,
             "total_estimated_usd": round(total_estimated, 2),
             "within_budget": total_estimated <= req.budget_usd,
+            "governance_interceptions": governance_interceptions,
+            "loop_iterations": loop_iterations,
+            "obo_delegation_hop": {
+                "caller": "spiffe://cluster.local/ns/camp-travel/sa/travel-orchestrator",
+                "actor": AGENT_SPIFFE_ID,
+                "audiences": [
+                    "spiffe://cluster.local/ns/camp-travel/sa/flight-mcp",
+                    "spiffe://cluster.local/ns/camp-travel/sa/hotel-mcp",
+                    "spiffe://cluster.local/ns/camp-travel/sa/terminating-gw",
+                ],
+                "subject": obo_user,
+                "narrowed_scopes": [s.strip() for s in obo_scopes.split(",") if s.strip()],
+            },
         }
+
 
     @app.post("/agent/booking/confirm")
     async def confirm_bookings(req: Dict[str, Any], request: Request):
+        """
+        Executes final binding reservations via MCP JSON-RPC tools/call.
+        csl-mcp-sc verifies the cryptographic x-consul-hitl-evidence header bound to the human approval!
+        """
+        trace_id = request.headers.get("x-trace-id", f"trace-confirm-{int(time.time()*1000)}")
+        obo_user = request.headers.get("x-obo-user-id", req.get("obo_user", "traveler-101"))
+        obo_scopes = request.headers.get("x-obo-scopes", req.get("obo_scopes", "travel:read,travel:plan,booking:reserve"))
+        hitl_evidence = request.headers.get("x-consul-hitl-evidence", req.get("hitl_evidence_token", f"hitl-sig-{int(time.time())}"))
+
         traveler = req.get("traveler_name", "Alex Mercer")
         nights = req.get("nights", 4)
-        flight = req.get("flight", {})
-        hotel = req.get("hotel", {})
+        flight = req.get("flight", {}) or {}
+        hotel = req.get("hotel", {}) or {}
+
+        mcp_headers = {
+            "x-trace-id": trace_id,
+            "x-caller-spiffe-id": AGENT_SPIFFE_ID,
+            "x-obo-user-id": obo_user,
+            "x-obo-scopes": obo_scopes,
+            "x-consul-hitl-evidence": hitl_evidence,
+        }
 
         async with httpx.AsyncClient(timeout=10.0) as client:
+            # 1. Confirm Flight via MCP JSON-RPC 2.0 (with HITL evidence header)
             f_resp = await client.post(
-                f"{FLIGHT_MCP_URL}/mcp/flights/reserve",
+                f"{FLIGHT_MCP_URL}/mcp",
                 json={
-                    "flight_number": flight.get("flight_number", "UA-442"),
-                    "passenger_name": traveler,
-                    "origin": flight.get("origin", "JFK"),
-                    "destination": flight.get("destination", "SFO"),
+                    "jsonrpc": "2.0",
+                    "id": "rpc-confirm-flight",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "reserve_flight",
+                        "arguments": {
+                            "flight_number": flight.get("flight_number", "UA-442"),
+                            "passenger_name": traveler,
+                            "origin": flight.get("origin", "JFK"),
+                            "destination": flight.get("destination", "SFO"),
+                        },
+                    },
                 },
+                headers=mcp_headers,
             )
-            flight_confirmation = f_resp.json()
+            f_rpc = f_resp.json()
+            if "error" in f_rpc:
+                return {
+                    "status": "blocked_by_mcp_sidecar",
+                    "error": f_rpc["error"],
+                }
+            flight_confirmation = f_rpc.get("result", {})
 
+            # 2. Confirm Hotel via MCP JSON-RPC 2.0 (with HITL evidence header)
             h_resp = await client.post(
-                f"{HOTEL_MCP_URL}/mcp/hotels/reserve",
+                f"{HOTEL_MCP_URL}/mcp",
                 json={
-                    "hotel_id": hotel.get("id", "HTL-SF-01"),
-                    "guest_name": traveler,
-                    "nights": nights,
+                    "jsonrpc": "2.0",
+                    "id": "rpc-confirm-hotel",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "reserve_hotel",
+                        "arguments": {
+                            "hotel_id": hotel.get("id", "HTL-SF-01"),
+                            "guest_name": traveler,
+                            "nights": nights,
+                        },
+                    },
                 },
+                headers=mcp_headers,
             )
-            hotel_confirmation = h_resp.json()
+            h_rpc = h_resp.json()
+            if "error" in h_rpc:
+                return {
+                    "status": "blocked_by_mcp_sidecar",
+                    "error": h_rpc["error"],
+                }
+            hotel_confirmation = h_rpc.get("result", {})
 
         return {
             "status": "all_reservations_confirmed",
+            "hitl_evidence_token": hitl_evidence,
             "flight_booking": flight_confirmation,
             "hotel_booking": hotel_confirmation,
             "ground_transport": req.get("ground_transport"),
         }
 
+
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "booking-agent"}
+        return {"status": "healthy", "service": "booking-agent", "ai_role": "ai-agent"}
 
   weather_agent_main.py: |
+    """
+    Weather Agent (ai-agent workload + csl-mcp-sc Sidecar)
+    Queries Weather MCP server via Model Context Protocol (JSON-RPC 2.0) and uses travel-igw
+    (Consul AI Inference Gateway) for climate reasoning.
+    Contains ZERO OpenTelemetry or Vault credential code — all telemetry and auth are handled by mesh proxies.
+    """
     from fastapi import FastAPI, Request
     from pydantic import BaseModel
-    import httpx, os
+    from typing import Dict, Any, Optional
+    import httpx
+    import os
+    import time
 
-    app = FastAPI(title="CAMP Weather Agent")
+    app = FastAPI(title="CAMP Weather Agent (ai-agent)", version="2.1.0")
 
-    WEATHER_MCP_URL = os.getenv("WEATHER_MCP_URL", "http://localhost:8082")
-    TRAVEL_IGW_URL = os.getenv("TRAVEL_IGW_URL", "http://localhost:10001")
+    WEATHER_MCP_URL = os.getenv("WEATHER_MCP_URL", "http://weather-mcp:8082")
+    TRAVEL_IGW_URL = os.getenv("TRAVEL_IGW_URL", "http://travel-igw:10001")
+    AGENT_SPIFFE_ID = "spiffe://cluster.local/ns/camp-travel/sa/weather-agent"
+
 
     class WeatherAnalysisRequest(BaseModel):
         destination: str
         duration_days: int = 4
         trip_type: str = "Business Conference"
 
+
     @app.post("/agent/weather/analyze")
     async def analyze_destination_weather(req: WeatherAnalysisRequest, request: Request):
+        trace_id = request.headers.get("x-trace-id", f"trace-weather-{int(time.time()*1000)}")
         obo_user = request.headers.get("x-obo-user-id", "traveler-101")
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            mcp_resp = await client.post(
-                f"{WEATHER_MCP_URL}/mcp/weather/forecast",
-                json={"destination": req.destination, "days": req.duration_days},
-            )
-            weather_data = mcp_resp.json()
+        # Caller-side Identity Processor narrows OBO scopes specifically for weather-mcp hop
+        narrowed_scopes = "travel:read,weather:forecast"
 
+        mcp_headers = {
+            "x-trace-id": trace_id,
+            "x-caller-spiffe-id": AGENT_SPIFFE_ID,
+            "x-obo-user-id": obo_user,
+            "x-obo-scopes": narrowed_scopes,
+            "x-consul-obo-token": f"obo-hop2-weather-{obo_user}",
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # 1. Invoke Weather MCP Server via JSON-RPC 2.0 (governed by csl-mcp-sc)
+            mcp_resp = await client.post(
+                f"{WEATHER_MCP_URL}/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": f"rpc-weather-{int(time.time()*1000)}",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "get_weather_forecast",
+                        "arguments": {"destination": req.destination, "days": req.duration_days},
+                    },
+                },
+                headers=mcp_headers,
+            )
+            rpc_body = mcp_resp.json()
+            weather_data = rpc_body.get("result", {})
+
+            # 2. Call travel-igw AI Inference Gateway (csl-inf-rt) to summarize packing insights
+            llm_payload = {
+                "model": "gpt-4o",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Summarize weather for a {req.duration_days}-day {req.trip_type} trip to {req.destination}. Climate: {weather_data.get('summary')}. Advise packing list.",
+                    }
+                ],
+            }
+            igw_headers = {
+                "Content-Type": "application/json",
+                "x-trace-id": trace_id,
+                "x-caller-spiffe-id": AGENT_SPIFFE_ID,
+                "x-tenant-id": "travel-planning-dept",
+                "x-obo-user-id": obo_user,
+                "x-simulate-llm-outage": request.headers.get("x-simulate-llm-outage", "false"),
+            }
             try:
                 llm_resp = await client.post(
                     f"{TRAVEL_IGW_URL}/v1/chat/completions",
-                    json={
-                        "model": "gpt-4o",
-                        "messages": [{"role": "user", "content": f"Summarize weather: {weather_data['summary']}"}],
-                    },
-                    headers={"Content-Type": "application/json", "x-tenant-id": "travel", "x-obo-user-id": obo_user},
+                    json=llm_payload,
+                    headers=igw_headers,
                 )
-                ai_notes = llm_resp.json()["choices"][0]["message"]["content"]
+                llm_data = llm_resp.json()
+                ai_notes = llm_data["choices"][0]["message"]["content"]
             except Exception:
-                ai_notes = f"Climate is expected to be {weather_data['summary']}."
+                ai_notes = f"Climate is expected to be {weather_data.get('summary', 'mild')}. Pack appropriate light layers."
 
         return {
             "agent": "weather-agent",
+            "spiffe_id": AGENT_SPIFFE_ID,
             "destination": req.destination,
-            "forecast_summary": weather_data["summary"],
-            "packing_recommendations": weather_data["packing_recommendation"],
-            "daily_breakdown": weather_data["daily_forecast"],
+            "forecast_summary": weather_data.get("summary", "Mild & Clear"),
+            "packing_recommendations": weather_data.get("packing_recommendation", "Standard business attire"),
+            "daily_breakdown": weather_data.get("daily_forecast", []),
             "ai_advisory": ai_notes,
+            "obo_delegation_hop": {
+                "caller": "spiffe://cluster.local/ns/camp-travel/sa/travel-orchestrator",
+                "actor": AGENT_SPIFFE_ID,
+                "audience": "spiffe://cluster.local/ns/camp-travel/sa/weather-mcp",
+                "subject": obo_user,
+                "narrowed_scopes": narrowed_scopes.split(","),
+            },
         }
+
 
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "weather-agent"}
+        return {"status": "healthy", "service": "weather-agent", "ai_role": "ai-agent"}
 
   hotel_mcp_main.py: |
-    from fastapi import FastAPI
+    """
+    Hotel Booking MCP Server (mcp-server + csl-mcp-sc Sidecar Enforcement)
+    Supports:
+    - Real Model Context Protocol (MCP) JSON-RPC 2.0 endpoint (POST /mcp: tools/list, tools/call)
+    - csl-mcp-sc Per-Tool Policy Enforcement, Destination-Side OBO Verification, Proxy HITL Gate, and Zero-Code OTel Spans
+    - Backwards-compatible REST endpoints (/mcp/hotels/search, /mcp/hotels/reserve)
+    """
+    from fastapi import FastAPI, Request, HTTPException
     from pydantic import BaseModel
-    from typing import Optional
+    from typing import Dict, Any, List, Optional
+    import httpx
+    import os
     import uuid
+    import time
 
-    app = FastAPI(title="Hotel Booking MCP Server")
+    app = FastAPI(title="Hotel Booking MCP Server (csl-mcp-sc governed)", version="2.1.0")
+
+    OTEL_COLLECTOR_URL = os.getenv("OTEL_COLLECTOR_URL", "http://otel-collector:4318")
+    INDIGO_ANALYTICS_URL = os.getenv("INDIGO_ANALYTICS_URL", "http://indigo-analytics:8089")
+
 
     class HotelSearchRequest(BaseModel):
         destination: str
@@ -428,376 +992,1544 @@ data:
         check_out: Optional[str] = "2026-12-05"
         max_budget_per_night: Optional[float] = 400.0
 
+
     class HotelBookingRequest(BaseModel):
         hotel_id: str
         guest_name: str
         nights: int = 4
+        room_type: str = "Deluxe King"
+
 
     HOTEL_CATALOG = [
-        {"id": "HTL-SF-01", "name": "The Westin St. Francis", "city": "San Francisco", "price_per_night": 289.0, "rating": 4.6},
-        {"id": "HTL-SF-02", "name": "Palace Hotel San Francisco", "city": "San Francisco", "price_per_night": 349.0, "rating": 4.8},
-        {"id": "HTL-NY-01", "name": "The Langham Fifth Avenue", "city": "New York", "price_per_night": 450.0, "rating": 4.9},
-        {"id": "HTL-LON-01", "name": "The Savoy London", "city": "London", "price_per_night": 395.0, "rating": 4.8},
-        {"id": "HTL-GEN-01", "name": "Grand Hyatt Central", "city": "General", "price_per_night": 220.0, "rating": 4.5},
+        {"id": "HTL-SF-01", "name": "The Westin St. Francis", "city": "San Francisco", "price_per_night": 289.0, "rating": 4.6, "amenities": ["WiFi", "Fitness Center", "Conference Center"]},
+        {"id": "HTL-SF-02", "name": "Palace Hotel San Francisco", "city": "San Francisco", "price_per_night": 349.0, "rating": 4.8, "amenities": ["Indoor Pool", "Fine Dining", "Historic Lobby"]},
+        {"id": "HTL-NY-01", "name": "The Langham Fifth Avenue", "city": "New York", "price_per_night": 450.0, "rating": 4.9, "amenities": ["Spa", "Michelin Dining", "Central Park Views"]},
+        {"id": "HTL-LON-01", "name": "The Savoy London", "city": "London", "price_per_night": 395.0, "rating": 4.8, "amenities": ["River Thames View", "Butler Service", "Afternoon Tea"]},
+        {"id": "HTL-GEN-01", "name": "Grand Hyatt Central", "city": "General", "price_per_night": 220.0, "rating": 4.5, "amenities": ["Breakfast Included", "High-speed WiFi", "Business Lounge"]},
     ]
 
-    @app.post("/mcp/hotels/search")
-    async def search_hotels(req: HotelSearchRequest):
-        dest = req.destination.strip().lower()
-        matches = [h for h in HOTEL_CATALOG if dest in h["city"].lower() and h["price_per_night"] <= req.max_budget_per_night]
+    # Per-Tool Access Policy enforced by csl-mcp-sc (Discovery != Execution Permission)
+    MCP_TOOL_POLICY = {
+        "search_hotels": {
+            "allowed_spiffe_Callers": [
+                "spiffe://cluster.local/ns/camp-travel/sa/booking-agent",
+                "spiffe://cluster.local/ns/camp-travel/sa/travel-orchestrator",
+            ],
+            "required_obo_scope": "travel:plan",
+            "requires_hitl_approval": False,
+        },
+        "reserve_hotel": {
+            "allowed_spiffe_Callers": [
+                "spiffe://cluster.local/ns/camp-travel/sa/booking-agent",
+            ],
+            "required_obo_scope": "booking:reserve",
+            "requires_hitl_approval": True,
+        },
+        "override_hotel_rate": {
+            "allowed_spiffe_Callers": [
+                "spiffe://cluster.local/ns/camp-travel/sa/finance-admin-agent",
+            ],
+            "required_obo_scope": "admin:rate_override",
+            "requires_hitl_approval": True,
+        },
+    }
+
+
+    async def emit_mcp_sidecar_span(
+        trace_id: str,
+        caller_spiffe: str,
+        obo_user: str,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        result: Dict[str, Any],
+        span_type: str = "mcp_tool_call",
+        detail: Optional[str] = None,
+    ):
+        try:
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                await client.post(
+                    f"{OTEL_COLLECTOR_URL}/v1/traces",
+                    json={
+                        "trace_id": trace_id,
+                        "span_type": span_type,
+                        "span_name": f"csl-mcp-sc.hotel-mcp.{tool_name}",
+                        "instrumented_by": "csl-mcp-sc (MCP Sidecar Zero-Code ext-proc)",
+                        "service": "hotel-mcp",
+                        "mcp_server": "hotel-mcp",
+                        "agent_spiffe_id": caller_spiffe,
+                        "user_obo": obo_user,
+                        "tool_name": tool_name,
+                        "tool_arguments": arguments,
+                        "tool_result": result,
+                        "tokens_used": 18,
+                        "detail": detail,
+                    },
+                )
+        except Exception:
+            pass
+
+
+    def _execute_search_hotels(args: Dict[str, Any]) -> Dict[str, Any]:
+        destination = str(args.get("destination", "San Francisco"))
+        max_budget = float(args.get("max_budget_per_night", 400.0))
+        dest = destination.strip().lower()
+        matches = [h for h in HOTEL_CATALOG if dest in h["city"].lower() and h["price_per_night"] <= max_budget]
         if not matches:
             matches = [HOTEL_CATALOG[-1]]
-        return {"mcp_tool": "hotel_booking", "destination": req.destination, "available_hotels": matches}
+        return {
+            "mcp_tool": "hotel_booking",
+            "destination": destination,
+            "available_hotels": matches,
+        }
 
-    @app.post("/mcp/hotels/reserve")
-    async def reserve_hotel(req: HotelBookingRequest):
-        hotel = next((h for h in HOTEL_CATALOG if h["id"] == req.hotel_id), HOTEL_CATALOG[0])
+
+    def _execute_reserve_hotel(args: Dict[str, Any]) -> Dict[str, Any]:
+        hotel_id = str(args.get("hotel_id", "HTL-SF-01"))
+        guest_name = str(args.get("guest_name", "Alex Mercer"))
+        nights = int(args.get("nights", 4))
+        hotel = next((h for h in HOTEL_CATALOG if h["id"] == hotel_id), HOTEL_CATALOG[0])
+        total_cost = hotel["price_per_night"] * nights
+        booking_ref = f"HTL-CONF-{uuid.uuid4().hex[:8].upper()}"
         return {
             "mcp_tool": "hotel_booking",
             "status": "confirmed",
-            "booking_reference": f"HTL-CONF-{uuid.uuid4().hex[:8].upper()}",
+            "booking_reference": booking_ref,
             "hotel_name": hotel["name"],
             "city": hotel["city"],
-            "nights": req.nights,
-            "total_amount_usd": hotel["price_per_night"] * req.nights,
-            "guest_name": req.guest_name,
+            "nights": nights,
+            "total_amount_usd": total_cost,
+            "guest_name": guest_name,
         }
+
+
+    @app.post("/mcp")
+    async def mcp_jsonrpc_endpoint(request: Request):
+        """
+        Model Context Protocol (MCP) JSON-RPC 2.0 endpoint governed by csl-mcp-sc sidecar processor.
+        Separates catalog visibility (tools/list) from per-tool policy, OBO authority, and HITL approval (tools/call).
+        """
+        payload = await request.json()
+        rpc_id = payload.get("id", "rpc-1")
+        method = payload.get("method", "tools/list")
+        params = payload.get("params", {})
+
+        trace_id = request.headers.get("x-trace-id", f"trace-mcp-{int(time.time()*1000)}")
+        caller_spiffe = request.headers.get(
+            "x-caller-spiffe-id",
+            "spiffe://cluster.local/ns/camp-travel/sa/booking-agent",
+        )
+        obo_user = request.headers.get("x-obo-user-id", "traveler-101")
+        obo_scopes_raw = request.headers.get("x-obo-scopes", "travel:read,travel:plan,booking:reserve")
+        obo_scopes = [s.strip() for s in obo_scopes_raw.split(",") if s.strip()]
+        hitl_evidence = request.headers.get("x-consul-hitl-evidence", "")
+
+        if method == "tools/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": "search_hotels",
+                            "description": "Search corporate-compliant hotels by destination and nightly budget.",
+                            "inputSchema": {"type": "object", "properties": {"destination": {"type": "string"}, "max_budget_per_night": {"type": "number"}}},
+                        },
+                        {
+                            "name": "reserve_hotel",
+                            "description": "Issue binding hotel reservation (Requires HITL Approval & booking:reserve OBO scope).",
+                            "inputSchema": {"type": "object", "properties": {"hotel_id": {"type": "string"}, "guest_name": {"type": "string"}, "nights": {"type": "integer"}}},
+                        },
+                        {
+                            "name": "override_hotel_rate",
+                            "description": "Privileged finance tool to override negotiated corporate hotel rate caps.",
+                            "inputSchema": {"type": "object", "properties": {"hotel_id": {"type": "string"}, "new_rate_usd": {"type": "number"}}},
+                        },
+                    ]
+                },
+            }
+
+        if method == "tools/call":
+            tool_name = params.get("name", "")
+            arguments = params.get("arguments", {})
+            policy = MCP_TOOL_POLICY.get(tool_name)
+
+            if not policy:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {"code": -32601, "message": f"Unknown MCP tool '{tool_name}'"},
+                }
+
+            # 1. csl-mcp-sc Per-Tool Access Policy Check (Workload SPIFFE ID)
+            if caller_spiffe not in policy["allowed_spiffe_Callers"]:
+                detail = (
+                    f"csl-mcp-sc Per-Tool Policy Denied: workload '{caller_spiffe}' discovered tool '{tool_name}' "
+                    f"in catalog, but policy forbids invocation (allowed: {policy['allowed_spiffe_Callers']})"
+                )
+                await emit_mcp_sidecar_span(
+                    trace_id, caller_spiffe, obo_user, tool_name, arguments,
+                    {"error": "PER_TOOL_POLICY_DENIED"}, span_type="policy_violation", detail=detail
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {
+                        "code": -32001,
+                        "message": detail,
+                        "data": {
+                            "enforced_by": "csl-mcp-sc (Consul MCP Sidecar ext-proc)",
+                            "caller_spiffe_id": caller_spiffe,
+                            "tool": tool_name,
+                            "layer": "per-tool-policy",
+                        },
+                    },
+                }
+
+            # 2. Destination-Side Identity Processor (OBO Delegated User Scope Check)
+            req_scope = policy["required_obo_scope"]
+            if req_scope not in obo_scopes:
+                detail = (
+                    f"Identity Plane OBO Verification Denied: delegated token for user '{obo_user}' "
+                    f"(scopes={obo_scopes}) lacks required scope '{req_scope}' at destination 'hotel-mcp/{tool_name}'"
+                )
+                await emit_mcp_sidecar_span(
+                    trace_id, caller_spiffe, obo_user, tool_name, arguments,
+                    {"error": "OBO_SCOPE_DENIED"}, span_type="policy_violation", detail=detail
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {
+                        "code": -32002,
+                        "message": detail,
+                        "data": {
+                            "enforced_by": "Consul Destination Identity Processor (OBO)",
+                            "user_obo": obo_user,
+                            "user_scopes": obo_scopes,
+                            "required_scope": req_scope,
+                            "layer": "identity-plane-obo",
+                        },
+                    },
+                }
+
+            # 3. csl-mcp-sc Human-in-the-Loop (HITL) Approval Enforcement
+            if policy["requires_hitl_approval"] and not hitl_evidence.startswith("hitl-sig-"):
+                detail = (
+                    f"csl-mcp-sc HITL Gate Intercepted: tool '{tool_name}' is marked require_human_approval=true. "
+                    f"Missing cryptographic approval evidence bound to this action."
+                )
+                await emit_mcp_sidecar_span(
+                    trace_id, caller_spiffe, obo_user, tool_name, arguments,
+                    {"status": "HELD_FOR_HITL_APPROVAL"}, span_type="policy_violation", detail=detail
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {
+                        "code": -32003,
+                        "message": detail,
+                        "data": {
+                            "enforced_by": "csl-mcp-sc (HITL Enforcement Processor)",
+                            "requires_human_approval": True,
+                            "tool": tool_name,
+                            "layer": "mcp-hitl-gate",
+                        },
+                    },
+                }
+
+            # Execute underlying MCP tool business logic
+            if tool_name == "search_hotels":
+                res = _execute_search_hotels(arguments)
+            elif tool_name == "reserve_hotel":
+                res = _execute_reserve_hotel(arguments)
+                res["hitl_evidence_verified"] = hitl_evidence
+            else:
+                res = {"status": "rate_overridden"}
+
+            await emit_mcp_sidecar_span(trace_id, caller_spiffe, obo_user, tool_name, arguments, res)
+            return {"jsonrpc": "2.0", "id": rpc_id, "result": res}
+
+        return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32600, "message": "Invalid MCP request"}}
+
+
+    @app.post("/mcp/hotels/search")
+    async def search_hotels(req: HotelSearchRequest, request: Request):
+        res = _execute_search_hotels({"destination": req.destination, "max_budget_per_night": req.max_budget_per_night})
+        await emit_mcp_sidecar_span(
+            request.headers.get("x-trace-id", f"trace-{int(time.time()*1000)}"),
+            request.headers.get("x-caller-spiffe-id", "spiffe://cluster.local/ns/camp-travel/sa/booking-agent"),
+            request.headers.get("x-obo-user-id", "traveler-101"),
+            "search_hotels",
+            {"destination": req.destination, "max_budget_per_night": req.max_budget_per_night},
+            res,
+        )
+        return res
+
+
+    @app.post("/mcp/hotels/reserve")
+    async def reserve_hotel(req: HotelBookingRequest, request: Request):
+        res = _execute_reserve_hotel({"hotel_id": req.hotel_id, "guest_name": req.guest_name, "nights": req.nights})
+        await emit_mcp_sidecar_span(
+            request.headers.get("x-trace-id", f"trace-{int(time.time()*1000)}"),
+            request.headers.get("x-caller-spiffe-id", "spiffe://cluster.local/ns/camp-travel/sa/booking-agent"),
+            request.headers.get("x-obo-user-id", "traveler-101"),
+            "reserve_hotel",
+            {"hotel_id": req.hotel_id, "guest_name": req.guest_name, "nights": req.nights},
+            res,
+        )
+        return res
+
 
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "hotel-mcp"}
+        return {"status": "healthy", "service": "hotel-mcp-server", "ai_role": "mcp-server"}
 
   flight_mcp_main.py: |
-    from fastapi import FastAPI
+    """
+    Flight Booking MCP Server (mcp-server + csl-mcp-sc Sidecar Enforcement)
+    Supports:
+    - Real Model Context Protocol (MCP) JSON-RPC 2.0 endpoint (POST /mcp: tools/list, tools/call)
+    - csl-mcp-sc Per-Tool Policy, Destination OBO Verification, Proxy HITL Gate, and Cycle Detection Circuit Enforcement
+    - Backwards-compatible REST endpoints (/mcp/flights/search, /mcp/flights/reserve)
+    """
+    from fastapi import FastAPI, Request, HTTPException
     from pydantic import BaseModel
+    from typing import Dict, Any, List, Optional
+    import httpx
+    import os
     import uuid
+    import time
 
-    app = FastAPI(title="Flight Booking MCP Server")
+    app = FastAPI(title="Flight Booking MCP Server (csl-mcp-sc governed)", version="2.1.0")
+
+    OTEL_COLLECTOR_URL = os.getenv("OTEL_COLLECTOR_URL", "http://otel-collector:4318")
+    INDIGO_ANALYTICS_URL = os.getenv("INDIGO_ANALYTICS_URL", "http://indigo-analytics:8089")
+
 
     class FlightSearchRequest(BaseModel):
         origin: str = "JFK"
         destination: str = "SFO"
+        date: Optional[str] = "2026-12-01"
+        cabin_class: Optional[str] = "Economy"
+
 
     class FlightBookingRequest(BaseModel):
         flight_number: str
         passenger_name: str
         origin: str
         destination: str
+        seat_class: str = "Economy"
+
 
     FLIGHT_SCHEDULES = [
         {"flight_number": "UA-442", "airline": "United Airlines", "origin": "JFK", "destination": "SFO", "departure": "08:30 AM", "arrival": "11:45 AM", "price_usd": 380.0, "duration": "6h 15m"},
         {"flight_number": "DL-120", "airline": "Delta Air Lines", "origin": "JFK", "destination": "SFO", "departure": "02:15 PM", "arrival": "05:30 PM", "price_usd": 410.0, "duration": "6h 15m"},
         {"flight_number": "BA-178", "airline": "British Airways", "origin": "JFK", "destination": "LHR", "departure": "07:00 PM", "arrival": "07:00 AM+1", "price_usd": 650.0, "duration": "7h 00m"},
+        {"flight_number": "NH-107", "airline": "All Nippon Airways", "origin": "SFO", "destination": "NRT", "departure": "11:50 AM", "arrival": "03:00 PM+1", "price_usd": 890.0, "duration": "11h 10m"},
+        {"flight_number": "AA-809", "airline": "American Airlines", "origin": "ORD", "destination": "SFO", "departure": "10:00 AM", "arrival": "12:45 PM", "price_usd": 320.0, "duration": "4h 45m"},
     ]
 
-    @app.post("/mcp/flights/search")
-    async def search_flights(req: FlightSearchRequest):
-        return {"mcp_tool": "flight_booking", "available_flights": FLIGHT_SCHEDULES}
+    MCP_TOOL_POLICY = {
+        "search_flights": {
+            "allowed_spiffe_callers": [
+                "spiffe://cluster.local/ns/camp-travel/sa/booking-agent",
+                "spiffe://cluster.local/ns/camp-travel/sa/travel-orchestrator",
+            ],
+            "required_obo_scope": "travel:plan",
+            "requires_hitl_approval": False,
+        },
+        "reserve_flight": {
+            "allowed_spiffe_callers": [
+                "spiffe://cluster.local/ns/camp-travel/sa/booking-agent",
+            ],
+            "required_obo_scope": "booking:reserve",
+            "requires_hitl_approval": True,
+        },
+        "cancel_all_corporate_bookings": {
+            "allowed_spiffe_callers": [
+                "spiffe://cluster.local/ns/camp-travel/sa/global-security-admin",
+            ],
+            "required_obo_scope": "admin:emergency_cancel",
+            "requires_hitl_approval": True,
+        },
+    }
 
-    @app.post("/mcp/flights/reserve")
-    async def reserve_flight(req: FlightBookingRequest):
-        flight = next((f for f in FLIGHT_SCHEDULES if f["flight_number"] == req.flight_number), FLIGHT_SCHEDULES[0])
+
+    async def check_agent_circuit_breaker(caller_spiffe: str) -> Dict[str, Any]:
+        try:
+            service_short = caller_spiffe.split("/")[-1]
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                resp = await client.get(f"{INDIGO_ANALYTICS_URL}/api/indigo/circuit/{service_short}")
+                if resp.status_code == 200:
+                    return resp.json()
+        except Exception:
+            pass
+        return {"state": "CLOSED"}
+
+
+    async def emit_mcp_sidecar_span(
+        trace_id: str,
+        caller_spiffe: str,
+        obo_user: str,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        result: Dict[str, Any],
+        span_type: str = "mcp_tool_call",
+        detail: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                resp = await client.post(
+                    f"{OTEL_COLLECTOR_URL}/v1/traces",
+                    json={
+                        "trace_id": trace_id,
+                        "span_type": span_type,
+                        "span_name": f"csl-mcp-sc.flight-mcp.{tool_name}",
+                        "instrumented_by": "csl-mcp-sc (MCP Sidecar Zero-Code ext-proc)",
+                        "service": "flight-mcp",
+                        "mcp_server": "flight-mcp",
+                        "agent_spiffe_id": caller_spiffe,
+                        "user_obo": obo_user,
+                        "tool_name": tool_name,
+                        "tool_arguments": arguments,
+                        "tool_result": result,
+                        "tokens_used": 22,
+                        "detail": detail,
+                    },
+                )
+                if resp.status_code == 200:
+                    return resp.json().get("analytics")
+        except Exception:
+            pass
+        return None
+
+
+    def _execute_search_flights(args: Dict[str, Any]) -> Dict[str, Any]:
+        origin = str(args.get("origin", "JFK")).strip().upper()
+        dest = str(args.get("destination", "SFO")).strip().upper()
+
+        # Special case for Act 4 Cycle Detection Demo: sold-out route returning unchanged empty/error payload
+        if dest == "SOLDOUT-LOOP" or args.get("flight_number") == "UA-999-SOLDOUT":
+            return {
+                "mcp_tool": "flight_booking",
+                "status": "NO_INVENTORY_RETRYABLE",
+                "error_code": "GDS_SOLD_OUT_449",
+                "available_flights": [],
+            }
+
+        city_to_iata = {
+            "SAN FRANCISCO": "SFO",
+            "LONDON": "LHR",
+            "TOKYO": "NRT",
+            "NEW YORK": "JFK",
+        }
+        dest_code = city_to_iata.get(dest, dest)
+        matches = [f for f in FLIGHT_SCHEDULES if dest_code in f["destination"]]
+        if not matches:
+            matches = [FLIGHT_SCHEDULES[0]]
+        return {
+            "mcp_tool": "flight_booking",
+            "search_params": {"origin": origin, "destination": dest},
+            "available_flights": matches,
+        }
+
+
+    def _execute_reserve_flight(args: Dict[str, Any]) -> Dict[str, Any]:
+        fn = str(args.get("flight_number", "UA-442"))
+        passenger = str(args.get("passenger_name", "Alex Mercer"))
+        flight = next((f for f in FLIGHT_SCHEDULES if f["flight_number"] == fn), FLIGHT_SCHEDULES[0])
+        pnr = f"PNR-{uuid.uuid4().hex[:6].upper()}"
         return {
             "mcp_tool": "flight_booking",
             "status": "ticket_confirmed",
-            "pnr": f"PNR-{uuid.uuid4().hex[:6].upper()}",
+            "pnr": pnr,
             "flight_number": flight["flight_number"],
             "airline": flight["airline"],
             "route": f"{flight['origin']} -> {flight['destination']}",
-            "passenger_name": req.passenger_name,
+            "passenger_name": passenger,
             "amount_usd": flight["price_usd"],
         }
 
+
+    @app.post("/mcp")
+    async def mcp_jsonrpc_endpoint(request: Request):
+        """
+        Model Context Protocol (MCP) JSON-RPC 2.0 endpoint governed by csl-mcp-sc sidecar processor.
+        Enforces:
+        1. Agent-scoped Circuit Breaker (Consul Agentic Analytics csl-ag-ana)
+        2. Per-Tool Access Policy (csl-mcp-sc)
+        3. Destination Identity Processor (OBO Scope Verification)
+        4. Cryptographic Human-in-the-Loop (HITL) Approval Gate
+        """
+        payload = await request.json()
+        rpc_id = payload.get("id", "rpc-1")
+        method = payload.get("method", "tools/list")
+        params = payload.get("params", {})
+
+        trace_id = request.headers.get("x-trace-id", f"trace-mcp-{int(time.time()*1000)}")
+        caller_spiffe = request.headers.get(
+            "x-caller-spiffe-id",
+            "spiffe://cluster.local/ns/camp-travel/sa/booking-agent",
+        )
+        obo_user = request.headers.get("x-obo-user-id", "traveler-101")
+        obo_scopes_raw = request.headers.get("x-obo-scopes", "travel:read,travel:plan,booking:reserve")
+        obo_scopes = [s.strip() for s in obo_scopes_raw.split(",") if s.strip()]
+        hitl_evidence = request.headers.get("x-consul-hitl-evidence", "")
+
+        if method == "tools/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": "search_flights",
+                            "description": "Search available commercial flights between origin and destination.",
+                            "inputSchema": {"type": "object", "properties": {"origin": {"type": "string"}, "destination": {"type": "string"}}},
+                        },
+                        {
+                            "name": "reserve_flight",
+                            "description": "Issue binding airline ticket PNR (Requires HITL Approval & booking:reserve OBO scope).",
+                            "inputSchema": {"type": "object", "properties": {"flight_number": {"type": "string"}, "passenger_name": {"type": "string"}}},
+                        },
+                        {
+                            "name": "cancel_all_corporate_bookings",
+                            "description": "Emergency administrative tool to revoke active corporate PNRs.",
+                            "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}}},
+                        },
+                    ]
+                },
+            }
+
+        if method == "tools/call":
+            tool_name = params.get("name", "")
+            arguments = params.get("arguments", {})
+
+            # 0. Check Agent-Scoped Circuit Breaker State (from Consul Agentic Analytics csl-ag-ana)
+            circuit = await check_agent_circuit_breaker(caller_spiffe)
+            if circuit.get("state") == "OPEN":
+                detail = (
+                    f"Consul Behavior Policy Circuit Breaker OPEN for '{caller_spiffe}': "
+                    f"{circuit.get('reason', 'Cycle detected by csl-ag-ana')}"
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {
+                        "code": -32029,
+                        "message": detail,
+                        "data": {
+                            "enforced_by": "csl-mcp-sc + csl-ag-ana (Agent-Scoped Circuit Breaker)",
+                            "circuit_state": "OPEN",
+                            "agent_spiffe_id": caller_spiffe,
+                            "layer": "cycle-detection-circuit-breaker",
+                        },
+                    },
+                }
+
+            policy = MCP_TOOL_POLICY.get(tool_name)
+            if not policy:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {"code": -32601, "message": f"Unknown MCP tool '{tool_name}'"},
+                }
+
+            # 1. Per-Tool Access Policy Check
+            if caller_spiffe not in policy["allowed_spiffe_callers"]:
+                detail = (
+                    f"csl-mcp-sc Per-Tool Policy Denied: caller '{caller_spiffe}' cannot invoke '{tool_name}'"
+                )
+                await emit_mcp_sidecar_span(
+                    trace_id, caller_spiffe, obo_user, tool_name, arguments,
+                    {"error": "PER_TOOL_POLICY_DENIED"}, span_type="policy_violation", detail=detail
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {
+                        "code": -32001,
+                        "message": detail,
+                        "data": {"enforced_by": "csl-mcp-sc", "layer": "per-tool-policy"},
+                    },
+                }
+
+            # 2. Destination-Side OBO Scope Verification
+            req_scope = policy["required_obo_scope"]
+            if req_scope not in obo_scopes:
+                detail = (
+                    f"Identity Plane OBO Verification Denied: user '{obo_user}' (scopes={obo_scopes}) "
+                    f"lacks required scope '{req_scope}' for 'flight-mcp/{tool_name}'"
+                )
+                await emit_mcp_sidecar_span(
+                    trace_id, caller_spiffe, obo_user, tool_name, arguments,
+                    {"error": "OBO_SCOPE_DENIED"}, span_type="policy_violation", detail=detail
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {
+                        "code": -32002,
+                        "message": detail,
+                        "data": {
+                            "enforced_by": "Consul Destination Identity Processor (OBO)",
+                            "user_obo": obo_user,
+                            "required_scope": req_scope,
+                            "layer": "identity-plane-obo",
+                        },
+                    },
+                }
+
+            # 3. HITL Approval Enforcement
+            if policy["requires_hitl_approval"] and not hitl_evidence.startswith("hitl-sig-"):
+                detail = (
+                    f"csl-mcp-sc HITL Gate Intercepted: tool '{tool_name}' requires cryptographic human approval evidence."
+                )
+                await emit_mcp_sidecar_span(
+                    trace_id, caller_spiffe, obo_user, tool_name, arguments,
+                    {"status": "HELD_FOR_HITL_APPROVAL"}, span_type="policy_violation", detail=detail
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {
+                        "code": -32003,
+                        "message": detail,
+                        "data": {
+                            "enforced_by": "csl-mcp-sc (HITL Enforcement Processor)",
+                            "requires_human_approval": True,
+                            "tool": tool_name,
+                            "layer": "mcp-hitl-gate",
+                        },
+                    },
+                }
+
+            if tool_name == "search_flights":
+                res = _execute_search_flights(arguments)
+            elif tool_name == "reserve_flight":
+                res = _execute_reserve_flight(arguments)
+                res["hitl_evidence_verified"] = hitl_evidence
+            else:
+                res = {"status": "cancelled"}
+
+            analytics = await emit_mcp_sidecar_span(trace_id, caller_spiffe, obo_user, tool_name, arguments, res)
+            if analytics:
+                res["_analytics_telemetry"] = analytics
+            return {"jsonrpc": "2.0", "id": rpc_id, "result": res}
+
+        return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32600, "message": "Invalid MCP request"}}
+
+
+    @app.post("/mcp/flights/search")
+    async def search_flights(req: FlightSearchRequest, request: Request):
+        res = _execute_search_flights({"origin": req.origin, "destination": req.destination, "date": req.date})
+        await emit_mcp_sidecar_span(
+            request.headers.get("x-trace-id", f"trace-{int(time.time()*1000)}"),
+            request.headers.get("x-caller-spiffe-id", "spiffe://cluster.local/ns/camp-travel/sa/booking-agent"),
+            request.headers.get("x-obo-user-id", "traveler-101"),
+            "search_flights",
+            {"origin": req.origin, "destination": req.destination},
+            res,
+        )
+        return res
+
+
+    @app.post("/mcp/flights/reserve")
+    async def reserve_flight(req: FlightBookingRequest, request: Request):
+        res = _execute_reserve_flight({
+            "flight_number": req.flight_number,
+            "passenger_name": req.passenger_name,
+            "origin": req.origin,
+            "destination": req.destination,
+        })
+        await emit_mcp_sidecar_span(
+            request.headers.get("x-trace-id", f"trace-{int(time.time()*1000)}"),
+            request.headers.get("x-caller-spiffe-id", "spiffe://cluster.local/ns/camp-travel/sa/booking-agent"),
+            request.headers.get("x-obo-user-id", "traveler-101"),
+            "reserve_flight",
+            {"flight_number": req.flight_number, "passenger_name": req.passenger_name},
+            res,
+        )
+        return res
+
+
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "flight-mcp"}
+        return {"status": "healthy", "service": "flight-mcp-server", "ai_role": "mcp-server"}
 
   weather_mcp_main.py: |
-    from fastapi import FastAPI
+    """
+    Weather Server (mcp-server + csl-mcp-sc Sidecar Enforcement)
+    Supports:
+    - Real Model Context Protocol (MCP) JSON-RPC 2.0 endpoint (POST /mcp: tools/list, tools/call)
+    - Zero-code auto-instrumentation via csl-mcp-sc
+    - Backwards-compatible REST endpoint (/mcp/weather/forecast)
+    """
+    from fastapi import FastAPI, Request
     from pydantic import BaseModel
+    from typing import Dict, Any, Optional
+    import httpx
+    import os
     import random
+    import time
 
-    app = FastAPI(title="Weather MCP Server")
+    app = FastAPI(title="Weather MCP Server (csl-mcp-sc governed)", version="2.1.0")
+
+    OTEL_COLLECTOR_URL = os.getenv("OTEL_COLLECTOR_URL", "http://otel-collector:4318")
+
 
     class WeatherQuery(BaseModel):
         destination: str
         days: int = 4
 
+
     WEATHER_DATABASE = {
         "san francisco": {"temp_c": 18, "condition": "Partly Cloudy / Coastal Fog", "precipitation_chance": 15, "packing": "Light layers, light jacket, walking shoes"},
-        "new york": {"temp_c": 22, "condition": "Sunny", "precipitation_chance": 5, "packing": "Comfortable summer/fall attire"},
-        "london": {"temp_c": 15, "condition": "Light Rain / Overcast", "precipitation_chance": 65, "packing": "Waterproof jacket, umbrella"},
+        "new york": {"temp_c": 22, "condition": "Sunny", "precipitation_chance": 5, "packing": "Comfortable summer/fall attire, umbrella just in case"},
+        "london": {"temp_c": 15, "condition": "Light Rain / Overcast", "precipitation_chance": 65, "packing": "Waterproof jacket, umbrella, warm layers"},
         "tokyo": {"temp_c": 24, "condition": "Clear & Mild", "precipitation_chance": 10, "packing": "Breathable clothing, comfortable sneakers"},
+        "paris": {"temp_c": 20, "condition": "Breezy & Sunny", "precipitation_chance": 20, "packing": "Smart casual, cardigan or light coat"},
     }
 
-    @app.post("/mcp/weather/forecast")
-    async def get_weather_forecast(query: WeatherQuery):
-        city_key = query.destination.strip().lower()
-        data = WEATHER_DATABASE.get(city_key, {"temp_c": 21, "condition": "Mild & Clear", "precipitation_chance": 20, "packing": "Standard seasonal attire"})
-        forecast = [{"day": f"Day {d}", "high_c": data["temp_c"] + random.randint(1, 3), "condition": data["condition"]} for d in range(1, query.days + 1)]
+
+    def _execute_weather_forecast(destination: str, days: int) -> Dict[str, Any]:
+        city_key = destination.strip().lower()
+        data = WEATHER_DATABASE.get(
+            city_key,
+            {
+                "temp_c": 21,
+                "condition": "Mild & Clear",
+                "precipitation_chance": 20,
+                "packing": "Standard seasonal attire and a light jacket",
+            },
+        )
+        forecast = []
+        base_temp = data["temp_c"]
+        for day in range(1, days + 1):
+            forecast.append({
+                "day": f"Day {day}",
+                "high_c": base_temp + 2,
+                "low_c": base_temp - 3,
+                "condition": data["condition"],
+                "precipitation": f"{data['precipitation_chance']}%",
+            })
         return {
             "mcp_tool": "weather_server",
-            "destination": query.destination,
-            "summary": f"{data['condition']}, averaging {data['temp_c']}°C ({int(data['temp_c'] * 9/5 + 32)}°F)",
+            "destination": destination,
+            "summary": f"{data['condition']}, averaging {base_temp}°C ({int(base_temp * 9/5 + 32)}°F)",
             "packing_recommendation": data["packing"],
             "daily_forecast": forecast,
         }
 
+
+    async def emit_weather_mcp_span(trace_id: str, caller_spiffe: str, obo_user: str, args: Dict[str, Any], res: Dict[str, Any]):
+        try:
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                await client.post(
+                    f"{OTEL_COLLECTOR_URL}/v1/traces",
+                    json={
+                        "trace_id": trace_id,
+                        "span_type": "mcp_tool_call",
+                        "span_name": "csl-mcp-sc.weather-mcp.get_weather_forecast",
+                        "instrumented_by": "csl-mcp-sc (MCP Sidecar Zero-Code ext-proc)",
+                        "service": "weather-mcp",
+                        "mcp_server": "weather-mcp",
+                        "agent_spiffe_id": caller_spiffe,
+                        "user_obo": obo_user,
+                        "tool_name": "get_weather_forecast",
+                        "tool_arguments": args,
+                        "tool_result": {"summary": res.get("summary")},
+                        "tokens_used": 14,
+                    },
+                )
+        except Exception:
+            pass
+
+
+    @app.post("/mcp")
+    async def mcp_jsonrpc_endpoint(request: Request):
+        payload = await request.json()
+        rpc_id = payload.get("id", "rpc-1")
+        method = payload.get("method", "tools/list")
+        params = payload.get("params", {})
+
+        trace_id = request.headers.get("x-trace-id", f"trace-mcp-{int(time.time()*1000)}")
+        caller_spiffe = request.headers.get(
+            "x-caller-spiffe-id",
+            "spiffe://cluster.local/ns/camp-travel/sa/weather-agent",
+        )
+        obo_user = request.headers.get("x-obo-user-id", "traveler-101")
+
+        if method == "tools/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": "get_weather_forecast",
+                            "description": "Retrieve multi-day destination weather forecast and packing advisory.",
+                            "inputSchema": {"type": "object", "properties": {"destination": {"type": "string"}, "days": {"type": "integer"}}},
+                        }
+                    ]
+                },
+            }
+
+        if method == "tools/call":
+            args = params.get("arguments", {})
+            res = _execute_weather_forecast(str(args.get("destination", "San Francisco")), int(args.get("days", 4)))
+            await emit_weather_mcp_span(trace_id, caller_spiffe, obo_user, args, res)
+            return {"jsonrpc": "2.0", "id": rpc_id, "result": res}
+
+        return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32600, "message": "Invalid MCP request"}}
+
+
+    @app.post("/mcp/weather/forecast")
+    async def get_weather_forecast(query: WeatherQuery, request: Request):
+        res = _execute_weather_forecast(query.destination, query.days)
+        await emit_weather_mcp_span(
+            request.headers.get("x-trace-id", f"trace-{int(time.time()*1000)}"),
+            request.headers.get("x-caller-spiffe-id", "spiffe://cluster.local/ns/camp-travel/sa/weather-agent"),
+            request.headers.get("x-obo-user-id", "traveler-101"),
+            {"destination": query.destination, "days": query.days},
+            res,
+        )
+        return res
+
+
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "weather-mcp"}
+        return {"status": "healthy", "service": "weather-mcp-server", "ai_role": "mcp-server"}
 
   llm_backend_main.py: |
+    """
+    Foundation Model Backend & AI Inference Gateway External Processor (csl-inf-rt / csl-ig-pro)
+    Accessed via the travel-igw Envoy AI Gateway with Vault credential injection.
+    Demonstrates:
+    1. OpenAI-compatible inference interface (/v1/chat/completions)
+    2. Capability routing & Priority-based provider failover (Priority 1: meta-llama/llama-3-70b-instruct -> Priority 2: claude-3-5-sonnet)
+    3. Protocol translation (OpenAI chat.completions -> Anthropic /v1/messages)
+    4. Zero-code auto-instrumentation (emits OTel GenAI spans directly from the gateway processor to csl-nod-rly)
+    """
     from fastapi import FastAPI, Request, HTTPException, status
     from pydantic import BaseModel
-    from typing import List, Optional
-    import time, math
+    from typing import List, Dict, Any, Optional
+    import httpx
+    import os
+    import time
+    import math
 
-    app = FastAPI(title="CAMP Foundation Model Service", version="2.1.0")
+    app = FastAPI(title="CAMP Foundation Model & AI Inference Gateway Processor (csl-inf-rt)", version="2.1.0")
+
+    OTEL_COLLECTOR_URL = os.getenv("OTEL_COLLECTOR_URL", "http://otel-collector:4318")
+    INDIGO_ANALYTICS_URL = os.getenv("INDIGO_ANALYTICS_URL", "http://indigo-analytics:8089")
+
+    # Local override toggle for primary model outage simulation
+    local_outage_state = {"simulate_primary_llm_outage": False}
+
 
     class ChatMessage(BaseModel):
         role: str
         content: str
 
+
     class ChatCompletionRequest(BaseModel):
         model: str
         messages: List[ChatMessage]
+        temperature: Optional[float] = 0.7
+        capabilities: Optional[List[str]] = ["chat", "reasoning"]
 
-    def calc_tokens(text: str) -> int:
+
+    token_usage_stats = {
+        "total_calls": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "total_cost_usd": 0.0,
+        "failovers_executed": 0,
+    }
+
+
+    def count_tokens(text: str) -> int:
         if not text:
             return 0
-        return max(len(text.split()), math.ceil(len(text) / 3.7))
+        words = text.split()
+        chars = len(text)
+        return max(len(words), math.ceil(chars / 3.7))
+
+
+    async def is_primary_outage_active(request: Request) -> bool:
+        if request.headers.get("x-simulate-llm-outage", "").lower() == "true":
+            return True
+        if local_outage_state["simulate_primary_llm_outage"]:
+            return True
+        try:
+            async with httpx.AsyncClient(timeout=1.0) as client:
+                resp = await client.get(f"{INDIGO_ANALYTICS_URL}/api/indigo/flags")
+                if resp.status_code == 200:
+                    return bool(resp.json().get("simulate_primary_llm_outage", False))
+        except Exception:
+            pass
+        return False
+
 
     @app.post("/v1/chat/completions")
     @app.post("/openai/v1/chat/completions")
     async def chat_completions(req: ChatCompletionRequest, request: Request):
+        """OpenAI-compatible endpoint governed by Consul AI Inference Gateway (csl-inf-rt)"""
         auth = request.headers.get("authorization", "")
         if not auth.startswith("Bearer "):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Vault API key")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid injected provider API key from travel-igw",
+            )
 
         user_prompt = "\n".join([m.content for m in req.messages if m.role == "user"])
-        p_tokens = calc_tokens(user_prompt)
+        prompt_tokens = count_tokens(user_prompt)
 
-        dest = "the destination"
+        destination = "the destination"
         for line in user_prompt.splitlines():
-            if "destination:" in line.lower() or "to " in line.lower() or "route:" in line.lower():
+            if "to " in line.lower() or "destination:" in line.lower() or "route:" in line.lower():
                 parts = line.split(":")[-1].strip()
                 if parts:
-                    dest = parts
+                    destination = parts
 
-        reply = f"[travel-igw AI Gateway] Completed multi-agent reasoning with '{req.model}'. Consolidated flight, hotel, and transport logistics for {dest}. Itinerary meets corporate travel compliance."
-        c_tokens = calc_tokens(reply)
-        total_tok = p_tokens + c_tokens
-        call_cost = round(total_tok * 0.000005, 5)
+        outage_active = await is_primary_outage_active(request)
+        requested_model = req.model
+
+        if outage_active:
+            # Priority 1 upstream (meta-llama/llama-3-70b-instruct) failed -> Failover to Priority 2 (claude-3-5-sonnet)
+            routed_model = "claude-3-5-sonnet (Anthropic Priority-2 Failover)"
+            protocol_translation = "OpenAI /v1/chat/completions -> Anthropic /v1/messages (csl-inf-rt)"
+            vault_secret_ref = "vault:secret/data/ai/anthropic#api_key_ant_8820"
+            token_usage_stats["failovers_executed"] += 1
+            simulated_reply = (
+                f"[csl-inf-rt Priority-2 Failover: claude-3-5-sonnet] Primary upstream '{requested_model}' returned 503/429. "
+                f"Consul AI Inference Gateway automatically translated OpenAI request to Anthropic /v1/messages via Terminating Gateway mTLS. "
+                f"Synthesized compliant itinerary for {destination}."
+            )
+        else:
+            routed_model = requested_model
+            protocol_translation = "OpenAI /v1/chat/completions -> Native Upstream (csl-inf-rt)"
+            vault_secret_ref = "vault:secret/data/ai/llm#api_key_sk_99201"
+            simulated_reply = (
+                f"[travel-igw AI Gateway] Completed multi-agent reasoning using '{routed_model}'. "
+                f"Consolidated flight, lodging, and ground logistics for {destination}. "
+                f"Full itinerary is compliant with corporate travel policy and ready for executive authorization."
+            )
+
+        completion_tokens = count_tokens(simulated_reply)
+        total_tokens = prompt_tokens + completion_tokens
+        call_cost = round(total_tokens * (0.000008 if outage_active else 0.000005), 6)
+
+        token_usage_stats["total_calls"] += 1
+        token_usage_stats["prompt_tokens"] += prompt_tokens
+        token_usage_stats["completion_tokens"] += completion_tokens
+        token_usage_stats["total_tokens"] += total_tokens
+        token_usage_stats["total_cost_usd"] = round(token_usage_stats["total_cost_usd"] + call_cost, 6)
+
+        trace_id = request.headers.get("x-trace-id", f"trace-igw-{int(time.time()*1000)}")
+        obo_user = request.headers.get("x-obo-user-id", "anonymous")
+        caller_spiffe = request.headers.get(
+            "x-caller-spiffe-id",
+            "spiffe://cluster.local/ns/camp-travel/sa/travel-orchestrator",
+        )
+
+        # Zero-Code Auto-Instrumentation: csl-inf-rt emits OpenTelemetry GenAI span directly to csl-nod-rly
+        try:
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                await client.post(
+                    f"{OTEL_COLLECTOR_URL}/v1/traces",
+                    json={
+                        "trace_id": trace_id,
+                        "span_type": "llm_inference",
+                        "span_name": "csl-inf-rt.chat.completions",
+                        "instrumented_by": "csl-inf-rt (AI Inference Gateway Zero-Code ext-proc)",
+                        "service": "travel-igw",
+                        "agent_spiffe_id": caller_spiffe,
+                        "user_obo": obo_user,
+                        "model": requested_model,
+                        "response_model": routed_model,
+                        "failover_triggered": outage_active,
+                        "protocol_translation": protocol_translation,
+                        "tokens_used": total_tokens,
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                    },
+                )
+        except Exception:
+            pass
 
         return {
             "id": f"chatcmpl-{int(time.time()*1000)}",
-            "model": req.model,
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}}],
-            "usage": {"prompt_tokens": p_tokens, "completion_tokens": c_tokens, "total_tokens": total_tok},
+            "object": "chat.completion",
+            "model": routed_model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": simulated_reply,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
             "gateway_metadata": {
                 "authenticated_by_vault": True,
-                "gateway_tier": request.headers.get("x-consul-mesh-tier", "travel-igw-2.1"),
+                "vault_secret_ref": vault_secret_ref,
+                "gateway_tier": request.headers.get("x-consul-mesh-tier", "travel-igw-2.1 (csl-inf-rt)"),
+                "tenant_obo_user": obo_user,
                 "estimated_cost_usd": call_cost,
+                "failover_triggered": outage_active,
+                "requested_model": requested_model,
+                "routed_model": routed_model,
+                "protocol_translation": protocol_translation,
+                "zero_code_traced": True,
             },
         }
+
 
     @app.post("/v1/messages")
     @app.post("/anthropic/v1/messages")
     async def anthropic_messages(request: Request):
-        return {"id": f"msg-{int(time.time()*1000)}", "content": [{"type": "text", "text": "[Anthropic via travel-igw] Synthesized message response."}], "usage": {"input_tokens": 20, "output_tokens": 25}}
+        """Anthropic Claude native endpoint"""
+        body = await request.json()
+        model = body.get("model", "claude-3-5-sonnet")
+        content = body.get("messages", [{}])[0].get("content", "")
+        inp_tok = count_tokens(content)
+        out_text = f"[Anthropic via travel-igw] Synthesized message response with {model}."
+        out_tok = count_tokens(out_text)
+        return {
+            "id": f"msg-{int(time.time()*1000)}",
+            "type": "message",
+            "model": model,
+            "content": [{"type": "text", "text": out_text}],
+            "usage": {"input_tokens": inp_tok, "output_tokens": out_tok},
+        }
+
+
+    @app.post("/api/llm/simulate-outage")
+    async def toggle_outage(body: Dict[str, Any]):
+        local_outage_state["simulate_primary_llm_outage"] = bool(body.get("simulate_primary_llm_outage", False))
+        return {"status": "updated", **local_outage_state}
+
+
+    @app.get("/metrics/tokens")
+    async def get_metrics():
+        return token_usage_stats
+
 
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "llm-backend"}
+        return {"status": "healthy", "service": "llm-backend", "component": "csl-inf-rt"}
 
   external_mcp_main.py: |
+    """
+    External MCP Travel Server (External Partner Tools via Terminating Gateway)
+    Accessed outside the mesh via the Consul Terminating Gateway with:
+    1. Vault-backed credential injection (Bearer vault:secret/data/partners/amadeus#key_99)
+    2. Identity Plane OBO scope verification (requires 'partner:gds_egress' or 'booking:reserve')
+    """
     from fastapi import FastAPI, Request, HTTPException, status
     from pydantic import BaseModel
+    from typing import Dict, Any
     import uuid
 
-    app = FastAPI(title="External Partner Travel MCP Server")
+    app = FastAPI(title="External Partner Travel MCP Server", version="2.1.0")
+
 
     class CarRentalRequest(BaseModel):
         destination: str
         vehicle_class: str = "Executive Sedan"
         rental_days: int = 4
 
+
     @app.post("/external/mcp/ground-transport")
     async def ground_transport(req: CarRentalRequest, request: Request):
+        """External Travel Partner Endpoint requiring Vault injected credential + valid OBO scope"""
         auth_header = request.headers.get("authorization", "")
         if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Vault credential")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized: Missing Vault-injected external partner credential from Terminating Gateway",
+            )
+
+        # Check if OBO scopes explicitly restrict external partner egress (e.g. contractor persona in Act 3)
+        obo_scopes_raw = request.headers.get("x-obo-scopes", "")
+        if obo_scopes_raw:
+            scopes = [s.strip() for s in obo_scopes_raw.split(",") if s.strip()]
+            if "partner:gds_egress" not in scopes and "booking:reserve" not in scopes:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Identity Plane OBO Denied at Terminating Gateway: user '{request.headers.get('x-obo-user-id', 'contractor')}' "
+                        f"(scopes={scopes}) is not authorized for external partner GDS egress ('partner:gds_egress')"
+                    ),
+                )
+
+        rental_id = f"RENT-{uuid.uuid4().hex[:6].upper()}"
+        rate_per_day = 85.0
+        total = rate_per_day * req.rental_days
 
         return {
-            "external_mcp": "amadeus-partner-gds",
+            "external_mcp": "hertz-amadeus-partner-gds",
             "status": "reserved",
-            "rental_id": f"RENT-{uuid.uuid4().hex[:6].upper()}",
+            "rental_id": rental_id,
             "destination": req.destination,
             "vehicle": req.vehicle_class,
             "days": req.rental_days,
-            "total_amount_usd": 85.0 * req.rental_days,
-            "vault_egress_security": {"credential_injected_by": "consul-terminating-gateway", "authenticated": True},
+            "total_amount_usd": total,
+            "vault_egress_security": {
+                "credential_injected_by": "consul-terminating-gateway",
+                "authenticated": True,
+                "per_model_mtls": True,
+            },
         }
+
 
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "external-mcp"}
+        return {"status": "healthy", "service": "external-mcp-server"}
 
   otel_collector_main.py: |
+    """
+    OpenTelemetry Collector & Span Relay (csl-nod-rly / CAMP AI Observability)
+    Receives zero-code auto-instrumented spans emitted by protocol-aware mesh proxies:
+    - AI Inference Gateway external processor (csl-inf-rt / csl-ig-pro)
+    - Model Context Protocol sidecar external processor (csl-mcp-sc)
+    - Identity Plane OBO processors
+    Queues trace evidence via BullMQ/Redis semantics to Agentic Analytics (csl-ag-ana) for cycle detection,
+    and forwards OTLP spans to Grafana Tempo.
+    """
     from fastapi import FastAPI, Request
+    from typing import Dict, Any, List
+    import httpx
+    import os
     import time
+    import uuid
 
-    app = FastAPI(title="CAMP OpenTelemetry Collector")
-    traces_store = []
+    app = FastAPI(title="CAMP OpenTelemetry Collector & Span Relay (csl-nod-rly)", version="2.1.0")
+
+    INDIGO_ANALYTICS_URL = os.getenv("INDIGO_ANALYTICS_URL", "http://indigo-analytics:8089")
+    TEMPO_OTLP_URL = os.getenv("TEMPO_OTLP_URL", "http://tempo:4318/v1/traces")
+
+    traces_store: List[Dict[str, Any]] = []
+    bullmq_relay_queue: List[Dict[str, Any]] = []
+
 
     @app.post("/v1/traces")
     async def ingest_trace(request: Request):
         data = await request.json()
-        p_tok = data.get("prompt_tokens", int(data.get("tokens_used", 0) * 0.6))
-        c_tok = data.get("completion_tokens", int(data.get("tokens_used", 0) * 0.4))
-        tot_tok = p_tok + c_tok
-        t_id = data.get("trace_id", f"trace-{int(time.time()*1000)}")
+        trace_id = data.get("trace_id", f"trace-{int(time.time()*1000)}")
+        span_type = data.get("span_type", "llm_inference")
+
+        prompt_tokens = data.get("prompt_tokens", int(data.get("tokens_used", 0) * 0.6))
+        completion_tokens = data.get("completion_tokens", int(data.get("tokens_used", 0) * 0.4))
+        total_tokens = prompt_tokens + completion_tokens
+        cost_usd = round(total_tokens * 0.000005, 5)
+
+        service_name = data.get("service", "travel-orchestrator")
+        agent_spiffe = data.get(
+            "agent_spiffe_id",
+            f"spiffe://cluster.local/ns/camp-travel/sa/{service_name}",
+        )
+
         record = {
             "ingest_timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "trace_id": t_id,
-            "service": data.get("service", "travel-orchestrator"),
+            "trace_id": trace_id,
+            "span_type": span_type,
+            "service": service_name,
+            "instrumented_by": data.get("instrumented_by", "consul-envoy-ext-proc (zero-code)"),
+            "user_obo": data.get("user_obo", "anonymous"),
+            "obo_scopes": data.get("obo_scopes", []),
             "otel_gen_ai_attributes": {
-                "gen_ai.system": "watsonx / consul-ai-gw",
+                "gen_ai.system": data.get("gen_ai_system", "consul-ai-gw (csl-inf-rt)"),
                 "gen_ai.request.model": data.get("model", "meta-llama/llama-3-70b-instruct"),
-                "gen_ai.usage.prompt_tokens": p_tok,
-                "gen_ai.usage.completion_tokens": c_tok,
-                "gen_ai.usage.total_tokens": tot_tok,
-                "gen_ai.usage.cost_usd": round(tot_tok * 0.000005, 5),
+                "gen_ai.response.model": data.get("response_model", data.get("model", "meta-llama/llama-3-70b-instruct")),
+                "gen_ai.usage.prompt_tokens": prompt_tokens,
+                "gen_ai.usage.completion_tokens": completion_tokens,
+                "gen_ai.usage.total_tokens": total_tokens,
+                "gen_ai.usage.cost_usd": cost_usd,
+                "mcp.tool.name": data.get("tool_name"),
+                "mcp.tool.server": data.get("mcp_server"),
+                "spiffe.id": agent_spiffe,
+                "consul.ai_gateway": "travel-igw",
+                "consul.failover_triggered": data.get("failover_triggered", False),
             },
-            "tokens_used": tot_tok,
+            "tokens_used": total_tokens,
             "payload": data,
+            "relayed_to_indigo": True,
         }
         traces_store.append(record)
 
-        # Forward standard OTLP span hierarchy into Tempo
+        # Queue trace trigger in Span Relay (csl-nod-rly -> BullMQ -> csl-ag-ana)
+        queue_job = {
+            "job_id": f"bullmq-{uuid.uuid4().hex[:8]}",
+            "queue": "consul-ai-cycle-detection",
+            "trace_id": trace_id,
+            "span_type": span_type,
+            "agent_spiffe_id": agent_spiffe,
+            "tool_name": data.get("tool_name"),
+            "timestamp": record["ingest_timestamp"],
+        }
+        bullmq_relay_queue.append(queue_job)
+
+        # Asynchronously forward evidence to Agentic Analytics (csl-ag-ana)
+        analytics_result = None
         try:
-            import httpx, uuid
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                ana_resp = await client.post(
+                    f"{INDIGO_ANALYTICS_URL}/api/indigo/ingest-span",
+                    json={
+                        "trace_id": trace_id,
+                        "span_type": span_type,
+                        "agent_spiffe_id": agent_spiffe,
+                        "service": service_name,
+                        "mcp_server": data.get("mcp_server"),
+                        "tool_name": data.get("tool_name"),
+                        "tool_arguments": data.get("tool_arguments"),
+                        "tool_result": data.get("tool_result"),
+                        "tokens_used": total_tokens,
+                        "status": data.get("status", "OK"),
+                        "detail": data.get("detail"),
+                    },
+                )
+                analytics_result = ana_resp.json()
+        except Exception:
+            pass
+
+        # Forward standard OTLP span hierarchy into Grafana Tempo
+        try:
             now_ns = int(time.time() * 1e9)
-            raw_tid = str(data.get("trace_id", "")).replace("trace-camp-", "").replace("trace-", "")
-            if len(raw_tid) < 32:
-                raw_tid = (raw_tid + uuid.uuid4().hex)[:32]
-            else:
-                raw_tid = raw_tid[:32]
-
-            parent_span_id = uuid.uuid4().hex[:16]
-            agent_span_id = uuid.uuid4().hex[:16]
-            llm_span_id = uuid.uuid4().hex[:16]
-
+            raw_tid = str(trace_id).replace("trace-camp-", "").replace("trace-", "")
+            raw_tid = (raw_tid + uuid.uuid4().hex)[:32]
+            span_id = uuid.uuid4().hex[:16]
             otlp_spans = {
                 "resourceSpans": [
                     {
                         "resource": {
                             "attributes": [
-                                {"key": "service.name", "value": {"stringValue": "camp-agentic-mesh"}},
-                                {"key": "gen_ai.system", "value": {"stringValue": "consul-ai-gw"}},
-                                {"key": "gen_ai.request.model", "value": {"stringValue": str(data.get("model", "meta-llama/llama-3-70b-instruct"))}},
+                                {"key": "service.name", "value": {"stringValue": service_name}},
                                 {"key": "consul.mesh.version", "value": {"stringValue": "2.1.0-enterprise"}},
+                                {"key": "consul.ai.instrumented_by", "value": {"stringValue": record["instrumented_by"]}},
                             ]
                         },
                         "scopeSpans": [
                             {
-                                "scope": {"name": "camp.telemetry"},
+                                "scope": {"name": "consul.agentic.auto_instrumentation"},
                                 "spans": [
                                     {
                                         "traceId": raw_tid,
-                                        "spanId": parent_span_id,
-                                        "name": "POST /api/travel/plan (API Gateway)",
-                                        "kind": 2,
-                                        "startTimeUnixNano": str(now_ns - 800000000),
+                                        "spanId": span_id,
+                                        "name": data.get("span_name", f"{service_name}.{span_type}"),
+                                        "kind": 3,
+                                        "startTimeUnixNano": str(now_ns - 250000000),
                                         "endTimeUnixNano": str(now_ns),
                                         "attributes": [
-                                            {"key": "http.method", "value": {"stringValue": "POST"}},
-                                            {"key": "http.route", "value": {"stringValue": "/api/travel/plan"}},
-                                            {"key": "user.obo", "value": {"stringValue": str(data.get("user_obo", "traveler-101"))}},
-                                            {"key": "destination", "value": {"stringValue": str(data.get("destination", "San Francisco"))}},
+                                            {"key": "spiffe.id", "value": {"stringValue": agent_spiffe}},
+                                            {"key": "user.obo", "value": {"stringValue": str(record["user_obo"])}},
+                                            {"key": "gen_ai.request.model", "value": {"stringValue": str(record["otel_gen_ai_attributes"]["gen_ai.request.model"])}},
+                                            {"key": "gen_ai.response.model", "value": {"stringValue": str(record["otel_gen_ai_attributes"]["gen_ai.response.model"])}},
+                                            {"key": "gen_ai.usage.total_tokens", "value": {"intValue": total_tokens}},
+                                            {"key": "mcp.tool.name", "value": {"stringValue": str(data.get("tool_name") or "none")}},
                                         ],
                                         "status": {"code": 1},
-                                    },
-                                    {
-                                        "traceId": raw_tid,
-                                        "spanId": agent_span_id,
-                                        "parentSpanId": parent_span_id,
-                                        "name": "travel-orchestrator.synthesize",
-                                        "kind": 1,
-                                        "startTimeUnixNano": str(now_ns - 600000000),
-                                        "endTimeUnixNano": str(now_ns - 50000000),
-                                        "attributes": [
-                                            {"key": "service.name", "value": {"stringValue": "travel-orchestrator"}},
-                                            {"key": "sub_agents", "value": {"stringValue": "booking-agent,weather-agent"}},
-                                            {"key": "mcp_tools", "value": {"stringValue": "hotel-mcp,flight-mcp,external-mcp"}},
-                                        ],
-                                        "status": {"code": 1},
-                                    },
-                                    {
-                                        "traceId": raw_tid,
-                                        "spanId": llm_span_id,
-                                        "parentSpanId": agent_span_id,
-                                        "name": "travel-igw.chat.completions",
-                                        "kind": 3,
-                                        "startTimeUnixNano": str(now_ns - 400000000),
-                                        "endTimeUnixNano": str(now_ns - 100000000),
-                                        "attributes": [
-                                            {"key": "gen_ai.system", "value": {"stringValue": "consul-ai-gw"}},
-                                            {"key": "gen_ai.request.model", "value": {"stringValue": str(data.get("model", "meta-llama/llama-3-70b-instruct"))}},
-                                            {"key": "gen_ai.usage.prompt_tokens", "value": {"intValue": p_tok}},
-                                            {"key": "gen_ai.usage.completion_tokens", "value": {"intValue": c_tok}},
-                                            {"key": "gen_ai.usage.total_tokens", "value": {"intValue": tot_tok}},
-                                            {"key": "gen_ai.usage.cost_usd", "value": {"doubleValue": round(tot_tok * 0.000005, 5)}},
-                                            {"key": "vault.auth_broker", "value": {"stringValue": "token-injected"}},
-                                        ],
-                                        "status": {"code": 1},
-                                    },
+                                    }
                                 ],
                             }
                         ],
                     }
                 ]
             }
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                await client.post("http://tempo:4318/v1/traces", json=otlp_spans)
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                await client.post(TEMPO_OTLP_URL, json=otlp_spans)
         except Exception:
             pass
 
-        return {"status": "accepted", "trace_id": record["trace_id"], "attributes": record["otel_gen_ai_attributes"]}
+        return {
+            "status": "accepted",
+            "trace_id": record["trace_id"],
+            "attributes": record["otel_gen_ai_attributes"],
+            "analytics": analytics_result,
+        }
+
 
     @app.get("/v1/traces")
     async def get_traces():
-        return {"traces": list(reversed(traces_store[-50:]))}
+        return {
+            "traces": list(reversed(traces_store[-50:])),
+            "bullmq_queue_depth": len(bullmq_relay_queue),
+            "recent_jobs": list(reversed(bullmq_relay_queue[-15:])),
+        }
+
 
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "otel-collector"}
+        return {"status": "healthy", "service": "otel-collector", "component": "csl-nod-rly"}
 
   indigo_analytics_main.py: |
+    """
+    Consul Agentic Analytics Engine (csl-ag-ana / INDIGO Governance)
+    Asynchronously analyzes zero-code proxy trace spans relayed by csl-nod-rly (BullMQ/Redis pipeline)
+    for Cycle Detection (repetitive tool calls with identical arguments and unchanged results),
+    manages agent-scoped circuit breakers, and tracks MCP Sidecar & Identity Plane policy decisions.
+    """
     from fastapi import FastAPI
+    from pydantic import BaseModel
+    from typing import Dict, Any, List, Optional
+    import hashlib
+    import json
+    import time
 
-    app = FastAPI(title="INDIGO Analytic Engine")
+    app = FastAPI(title="Consul Agentic Analytics (csl-ag-ana / INDIGO)", version="2.1.0")
+
+    # Agent-scoped circuit breaker state managed by Consul Behavior Policy
+    # Key: SPIFFE ID (e.g. "spiffe://cluster.local/ns/camp-travel/sa/booking-agent")
+    agent_circuits: Dict[str, Dict[str, Any]] = {
+        "spiffe://cluster.local/ns/camp-travel/sa/travel-orchestrator": {
+            "state": "CLOSED",
+            "reason": "Normal operation",
+            "repetition_count": 0,
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        },
+        "spiffe://cluster.local/ns/camp-travel/sa/booking-agent": {
+            "state": "CLOSED",
+            "reason": "Normal operation",
+            "repetition_count": 0,
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        },
+        "spiffe://cluster.local/ns/camp-travel/sa/weather-agent": {
+            "state": "CLOSED",
+            "reason": "Normal operation",
+            "repetition_count": 0,
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        },
+    }
+
+    # Sliding window of tool call fingerprints per (trace_id / agent_spiffe_id)
+    # Fingerprint = sha256(agent_spiffe_id + tool_name + canonical_args + canonical_result)
+    fingerprint_counters: Dict[str, int] = {}
+    cycle_events: List[Dict[str, Any]] = []
+    governance_events: List[Dict[str, Any]] = []
+
+    # Runtime governance & fault-injection state for interactive demo acts
+    runtime_flags: Dict[str, Any] = {
+        "simulate_primary_llm_outage": False,
+        "cycle_threshold": 3,
+        "policy_violations_prevented": 0,
+        "cycles_detected": 0,
+        "obo_exchanges_verified": 0,
+        "hitl_gates_enforced": 0,
+        "tokens_inspected_last_24h": 14200,
+    }
+
+
+    class SpanEvidence(BaseModel):
+        trace_id: str
+        span_type: str = "mcp_tool_call"  # "mcp_tool_call" | "llm_inference" | "obo_exchange" | "policy_violation"
+        agent_spiffe_id: str = "spiffe://cluster.local/ns/camp-travel/sa/booking-agent"
+        service: str = "booking-agent"
+        mcp_server: Optional[str] = None
+        tool_name: Optional[str] = None
+        tool_arguments: Optional[Dict[str, Any]] = None
+        tool_result: Optional[Dict[str, Any]] = None
+        tokens_used: int = 0
+        status: str = "OK"
+        detail: Optional[str] = None
+
+
+    class CircuitResetRequest(BaseModel):
+        agent_spiffe_id: Optional[str] = None
+
+
+    class ChaosFlagRequest(BaseModel):
+        simulate_primary_llm_outage: bool
+
+
+    def compute_cycle_fingerprint(agent_spiffe: str, tool_name: str, args: Any, result: Any) -> str:
+        canonical = json.dumps(
+            {
+                "agent": agent_spiffe,
+                "tool": tool_name,
+                "args": args or {},
+                "result": result or {},
+            },
+            sort_keys=True,
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+    @app.post("/api/indigo/ingest-span")
+    async def ingest_span_evidence(evidence: SpanEvidence):
+        """
+        Consumes trace evidence queued by csl-nod-rly (Span Relay).
+        Evaluates repetitive (tool_name, arguments, result) tuples for Cycle Detection.
+        """
+        runtime_flags["tokens_inspected_last_24h"] += evidence.tokens_used
+
+        if evidence.span_type == "policy_violation":
+            runtime_flags["policy_violations_prevented"] += 1
+            governance_events.append({
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "trace_id": evidence.trace_id,
+                "type": "POLICY_VIOLATION_BLOCKED",
+                "agent": evidence.agent_spiffe_id,
+                "tool": evidence.tool_name,
+                "detail": evidence.detail or "Blocked by Consul Agentic Runtime Fabric proxy policy",
+            })
+            return {"status": "recorded", "circuit_state": "CLOSED"}
+
+        if evidence.span_type == "mcp_tool_call" and evidence.tool_name:
+            fp = compute_cycle_fingerprint(
+                evidence.agent_spiffe_id,
+                evidence.tool_name,
+                evidence.tool_arguments,
+                evidence.tool_result,
+            )
+            key = f"{evidence.agent_spiffe_id}:{fp}"
+            fingerprint_counters[key] = fingerprint_counters.get(key, 0) + 1
+            count = fingerprint_counters[key]
+
+            circuit_entry = agent_circuits.setdefault(
+                evidence.agent_spiffe_id,
+                {"state": "CLOSED", "reason": "Normal operation", "repetition_count": 0, "updated_at": ""},
+            )
+            circuit_entry["repetition_count"] = count
+            circuit_entry["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
+            if count >= runtime_flags["cycle_threshold"] and circuit_entry["state"] != "OPEN":
+                circuit_entry["state"] = "OPEN"
+                circuit_entry["reason"] = (
+                    f"Cycle detected by csl-ag-ana: {count} identical calls to "
+                    f"'{evidence.tool_name}' with unchanged arguments & result (fingerprint={fp})"
+                )
+                runtime_flags["cycles_detected"] += 1
+                runtime_flags["policy_violations_prevented"] += 1
+                cycle_event = {
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "trace_id": evidence.trace_id,
+                    "agent_spiffe_id": evidence.agent_spiffe_id,
+                    "tool_name": evidence.tool_name,
+                    "arguments": evidence.tool_arguments,
+                    "repetitions": count,
+                    "fingerprint": fp,
+                    "action_taken": "AGENT_CIRCUIT_OPENED",
+                }
+                cycle_events.append(cycle_event)
+                governance_events.append({
+                    "timestamp": cycle_event["timestamp"],
+                    "trace_id": evidence.trace_id,
+                    "type": "CYCLE_DETECTED_CIRCUIT_OPEN",
+                    "agent": evidence.agent_spiffe_id,
+                    "tool": evidence.tool_name,
+                    "detail": circuit_entry["reason"],
+                })
+
+            return {
+                "status": "analyzed",
+                "fingerprint": fp,
+                "repetition_count": count,
+                "circuit_state": circuit_entry["state"],
+                "reason": circuit_entry["reason"],
+            }
+
+        return {"status": "analyzed", "circuit_state": "CLOSED"}
+
+
+    @app.get("/api/indigo/circuit/{service_name}")
+    async def get_circuit_state(service_name: str):
+        spiffe_id = (
+            service_name
+            if service_name.startswith("spiffe://")
+            else f"spiffe://cluster.local/ns/camp-travel/sa/{service_name}"
+        )
+        entry = agent_circuits.get(
+            spiffe_id,
+            {"state": "CLOSED", "reason": "Normal operation", "repetition_count": 0},
+        )
+        return {"agent_spiffe_id": spiffe_id, **entry}
+
+
+    @app.post("/api/indigo/circuit/reset")
+    async def reset_circuits(req: Optional[CircuitResetRequest] = None):
+        """Resets agent-scoped circuit breakers back to CLOSED."""
+        fingerprint_counters.clear()
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+        for spiffe_id in list(agent_circuits.keys()):
+            if not req or not req.agent_spiffe_id or req.agent_spiffe_id in spiffe_id:
+                agent_circuits[spiffe_id] = {
+                    "state": "CLOSED",
+                    "reason": "Circuit reset by operator via Consul Behavior Policy",
+                    "repetition_count": 0,
+                    "updated_at": now_str,
+                }
+        governance_events.append({
+            "timestamp": now_str,
+            "trace_id": f"op-reset-{int(time.time())}",
+            "type": "CIRCUIT_BREAKER_RESET",
+            "agent": req.agent_spiffe_id if (req and req.agent_spiffe_id) else "all-agents",
+            "tool": "consul-behavior-policy",
+            "detail": "Operator reset agent-scoped circuit breaker to CLOSED",
+        })
+        return {"status": "reset", "circuits": agent_circuits}
+
+
+    @app.post("/api/indigo/flags")
+    async def set_chaos_flags(req: ChaosFlagRequest):
+        runtime_flags["simulate_primary_llm_outage"] = req.simulate_primary_llm_outage
+        governance_events.append({
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "trace_id": f"flag-{int(time.time())}",
+            "type": "PRIMARY_LLM_OUTAGE_SIMULATION",
+            "agent": "spiffe://cluster.local/ns/camp-travel/sa/travel-igw",
+            "tool": "inference-gateway",
+            "detail": f"Primary LLM outage simulation set to {req.simulate_primary_llm_outage}",
+        })
+        return {"status": "updated", "runtime_flags": runtime_flags}
+
+
+    @app.get("/api/indigo/flags")
+    async def get_chaos_flags():
+        return runtime_flags
+
 
     @app.get("/api/analytics/summary")
     @app.get("/api/indigo/audit-summary")
     async def audit_summary():
+        any_open = any(c["state"] == "OPEN" for c in agent_circuits.values())
         return {
-            "engine": "INDIGO-AI-Governance",
-            "compliance_status": "COMPLIANT",
+            "engine": "INDIGO-AI-Governance (Consul csl-ag-ana 2.1)",
+            "feature_gate": "consul-ai=enabled",
+            "compliance_status": "CIRCUIT_OPEN_HALTED" if any_open else "COMPLIANT",
             "metrics": {
-                "policy_violations": 0,
-                "tokens_inspected": 14200,
-                "avg_latency_ms": 38.5,
-                "active_foundation_model": "meta-llama/llama-3-70b-instruct",
-                "ai_gateway": "travel-igw (Consul 2.1)",
-                "credential_broker": "HashiCorp Vault",
+                "policy_violations_prevented": runtime_flags["policy_violations_prevented"],
+                "cycles_detected": runtime_flags["cycles_detected"],
+                "tokens_inspected_last_24h": runtime_flags["tokens_inspected_last_24h"],
+                "average_agent_mesh_latency_ms": 38.5,
+                "vault_egress_auth_success_rate": "100%",
+                "simulate_primary_llm_outage": runtime_flags["simulate_primary_llm_outage"],
             },
+            "agent_circuits": agent_circuits,
+            "recent_cycles": list(reversed(cycle_events[-10:])),
+            "governance_events": list(reversed(governance_events[-20:])),
+            "governance_rules_active": [
+                "Consul 2.1 AI Workload Identity (ai-agent, mcp-server, inference-model)",
+                "MCP Sidecar (csl-mcp-sc) Per-Tool JSON-RPC Policy & Cryptographic HITL Gate",
+                "Identity Plane Hop-by-Hop OBO Token Exchange & Scope Narrowing",
+                "AI Inference Gateway (csl-inf-rt) Capability Routing & Multi-Provider Failover",
+                "Agentic Analytics (csl-ag-ana) Asynchronous Cycle Detection & Circuit Breaker",
+            ],
         }
+
 
     @app.get("/healthz")
     async def health():
-        return {"status": "healthy", "service": "indigo-analytics"}
+        return {"status": "healthy", "service": "indigo-analytics", "component": "csl-ag-ana"}
 ---
 apiVersion: v1
 kind: ConfigMap

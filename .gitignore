@@ -11,3 +11,11 @@ env/
 .DS_Store
 *.swp
 *.tmp
+
+# Packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Agent teamwork metadata
+.agents/
