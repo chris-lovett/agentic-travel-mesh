@@ -318,6 +318,11 @@
       <span class="font-mono text-[11px] text-[#575B62] shrink-0 ml-4">consul-ai=enabled</span>
     </div>
 
+    <!-- Demo status banner -->
+    <div class="px-5 py-1.5 ln-border-b bg-[#1A1508] text-[11.5px] text-[#E5B54A] shrink-0">
+      Demo of a Consul 2.1 Beta feature set. Governance outcomes (MCP errors, OBO narrowing, LLM failover, loop detection) are simulated by this demo's application code, not enforced by the Consul sidecars. See the README, "What is real and what is simulated".
+    </div>
+
     <!-- Center Scrollable List Area -->
     <div class="flex-1 overflow-y-auto">
 
@@ -700,7 +705,7 @@
       </div>
       <div class="p-5 overflow-y-auto space-y-4 text-[12px]">
         <div>
-          <div class="text-[#8A8F98] mb-1.5 font-medium">1. Declarative ServiceDefaults &amp; Feature Gate</div>
+          <div class="text-[#8A8F98] mb-1.5 font-medium">1. Declarative ServiceDefaults &amp; Feature Gate (as deployed)</div>
           <pre class="bg-[#090A0B] border border-white/[0.06] p-3.5 rounded text-[11.5px] font-mono text-[#D0D6E0] overflow-x-auto">$ consul operator feature set -token="$CONSUL_TOKEN" consul-ai enabled
 
 apiVersion: consul.hashicorp.com/v1alpha1
@@ -712,14 +717,16 @@ metadata:
     consul.hashicorp.com/oauth-client-enabled: "true"
 spec:
   protocol: http
-  envoyExtensions:
-    - name: builtin/ext-proc
-      arguments:
-        processorTarget: "unix:///var/run/consul/csl-mcp-sc.sock"
-        messageTimeout: "5s"</pre>
+  # No envoyExtensions block: Consul 2.1.0 rejects the
+  # builtin/ext-proc processorTarget/messageTimeout form.</pre>
         </div>
         <div>
-          <div class="text-[#8A8F98] mb-1.5 font-medium">2. Live OpenTelemetry Spans (csl-nod-rly)</div>
+          <div class="text-[#8A8F98] mb-1.5 font-medium">2. Mesh mTLS key exchange (live, from this pod's Envoy sidecar)</div>
+          <pre id="modal-tls-status" class="bg-[#090A0B] border border-white/[0.06] p-3.5 rounded text-[11.5px] font-mono text-[#D0D6E0] overflow-x-auto">Loading TLS stats...</pre>
+          <div class="text-[11px] text-[#575B62] mt-1.5">Real data: counts of handshakes this sidecar has negotiated since it started. Hybrid X25519MLKEM768 protects key exchange only; certificates stay classical. Run a scenario first so there are fresh handshakes to count.</div>
+        </div>
+        <div>
+          <div class="text-[#8A8F98] mb-1.5 font-medium">3. Live OpenTelemetry Spans (csl-nod-rly)</div>
           <pre id="modal-live-spans" class="bg-[#090A0B] border border-white/[0.06] p-3.5 rounded text-[11.5px] font-mono text-[#D0D6E0] overflow-x-auto max-h-60">Loading live spans...</pre>
         </div>
       </div>
@@ -1136,7 +1143,18 @@ spec:
       } catch (e) {}
     }
 
+    async function fetchTlsStatus() {
+      const el = document.getElementById('modal-tls-status');
+      try {
+        const d = await (await fetch('/api/mesh/tls-status')).json();
+        if (!d.available) { el.innerText = 'Envoy admin stats unavailable from this pod.'; return; }
+        const fmt = o => Object.keys(o).length ? Object.entries(o).map(([k, v]) => `  ${k}: ${v}`).join('\n') : '  (none yet)';
+        el.innerText = `Key-exchange groups negotiated:\n${fmt(d.curves)}\n\nTLS versions:\n${fmt(d.versions)}\n\nHybrid post-quantum (X25519MLKEM768) in use: ${d.hybrid_pq_active ? 'YES' : 'no'}`;
+      } catch (e) { el.innerText = 'Could not read TLS status.'; }
+    }
+
     function openInspectorModal() {
+      fetchTlsStatus();
       fetchGovernanceStatus();
       document.getElementById('inspector-modal').classList.remove('hidden');
     }

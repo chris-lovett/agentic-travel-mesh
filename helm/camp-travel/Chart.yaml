@@ -1,6 +1,6 @@
 apiVersion: v2
 name: camp-travel
-description: Consul Agentic Mesh Platform (CAMP) - Travel Booking Multi-Agent Reference Architecture
+description: Consul Agentic Mesh Platform (CAMP) - Travel Booking Multi-Agent demo (uses Consul 2.1 Beta features; not for production)
 type: application
 version: 1.0.0
 appVersion: "2.1.0"

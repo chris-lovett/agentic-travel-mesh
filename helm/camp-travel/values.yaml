@@ -6,6 +6,7 @@ global:
 # Prerequisite: enable the gate on the Consul 2.1 server (requires an ACL token with operator:write).
 # See README "Option C", Step 1: consul operator feature set -token="$CONSUL_TOKEN" consul-ai enabled
 ai:
+  # Chart-internal flag only. Do NOT set ai.enabled=true on the Consul Helm release for this demo (see README).
   enabled: true
   featureGate: "consul-ai"
   registry: "icr.io/hashicorp-enterprise"
@@ -20,6 +21,12 @@ ai:
     image: "icr.io/hashicorp-enterprise/csl-ag-ana:2.1.0"
     spanRelayImage: "icr.io/hashicorp-enterprise/csl-nod-rly:2.1.0"
     bullmqQueueName: "consul-ai-cycle-detection"
+
+# Mesh-wide TLS (applies to the whole Consul partition, not just this release).
+# Offers hybrid post-quantum key exchange (X25519MLKEM768, classical X25519 fallback) on mesh mTLS.
+# Needs Consul 2.1+ and a Mesh CRD that exposes ecdhCurves. Key exchange only: certificates stay classical.
+meshTLS:
+  hybridPostQuantum: true
 
 # Container image defaults
 images:

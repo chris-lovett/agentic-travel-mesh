@@ -42,6 +42,26 @@ Enterprise AI adoption introduces failure modes and security boundaries that tra
 
 **Consul Enterprise 2.1 (`consul-ai=enabled`)** solves these challenges in the infrastructure plane—**with zero application code changes**—by elevating **AI Agents (`ai-agent`)**, **MCP Servers (`mcp-server`)**, **Foundation Models (`inference-model`)**, and the **AI Inference Gateway (`inference-gateway`)** into first-class mesh workloads governed by Envoy `builtin/ext-proc` Unix domain socket processors and asynchronous OpenTelemetry cycle detection.
 
+> [!IMPORTANT]
+> **Status of this repository: a demo, not a production reference.**
+> - The Consul 2.1 Agentic Runtime Fabric features used here (`consul-ai`, `ai-role` annotations, MCP sidecar, inference gateway, Operations Hub) are **Beta**.
+> - Much of the governance behaviour shown in the UI (the MCP `-32001`/`-32002`/`-32003`/`-32029` errors, OBO token narrowing, LLM failover, loop detection) is **simulated by this demo's Python application code**. See [What is real and what is simulated](#what-is-real-and-what-is-simulated).
+> - On **Red Hat OpenShift**, Consul credential injection is documented as unsupported, and the OpenShift 4.22 compatibility results for Consul 2.1 were still pending when this was written.
+
+### What is real and what is simulated
+
+| Capability | Status on the Helm / OpenShift deployment |
+| :--- | :--- |
+| Consul 2.1 server, `consul-ai` feature gate, `ai-role` annotations and ServiceAI catalog registration | **Real** |
+| Service mesh mTLS, SPIFFE identities, `ServiceIntentions` between workloads | **Real** |
+| Injected `csl-mcp-sc` agent sidecar container | **Real, but not on the request path.** The sidecar logs `waiting for oauth envelope` because no OAuth/IAM provider is configured. |
+| MCP tool governance (`-32001`, `-32002`, `-32003`, `-32029`), OBO scope narrowing, HITL signatures | **Simulated** in the MCP tool servers and agents |
+| Act 1 LLM failover and OpenAI to Anthropic translation | **Simulated** in `llm_backend/main.py`, fronted by a plain Envoy (`travel-igw`). A real `InferenceGateway` and `InferencePoolConfig` deploy on Consul 2.1.0, but with `csl-inf-rt:1.0.0-ent-ubi` they did not generate a route to the `llm-backend` model, so every request returned `503`. |
+| Vault credential injection via `terminating-gw` | **Simulated.** Not supported on OpenShift. |
+| Loop detection and circuit breaking (Act 4) | **Simulated** by the demo's analytics service (`indigo-analytics`) |
+| Hybrid post-quantum TLS (`X25519MLKEM768`) on mesh mTLS | **Real.** Enabled by the `Mesh` config entry (`meshTLS.hybridPostQuantum` in `values.yaml`). The Inspector modal reads the negotiated key-exchange groups from the sidecar's own Envoy stats. This covers key exchange only; certificates stay classical. The `Mesh` entry is global to the Consul partition. |
+| OpenTelemetry spans and Tempo/Grafana | **Real telemetry pipeline**, but the `gen_ai.*` and `mcp.*` spans are emitted by the demo code, not by the proxies |
+
 ---
 
 ## 🏛️ Reference Architecture
@@ -272,6 +292,18 @@ open http://localhost:3000
 
 ### Option C: Kubernetes & Red Hat OpenShift via Helm
 
+> [!NOTE]
+> **Prerequisites.** Consul 2.1 Enterprise must already be installed with connect injection enabled and a valid enterprise license. The sidecar images referenced by the Consul chart defaults (`hashicorp/consul-mcp-sc`, `consul-inference-gateway`) are private. Public images are available on Docker Hub, for example `hashicorp/csl-mcp-sc:1.0.0-ent-ubi`. When installing or upgrading Consul, set:
+>
+> ```bash
+> helm upgrade --install consul hashicorp/consul --version 2.1.0 -n consul --reuse-values \
+>   --set ai.agent.image=docker.io/hashicorp/csl-mcp-sc:1.0.0-ent-ubi
+> ```
+>
+> Pods that were injected before the image was set must be restarted (`oc rollout restart deployment -n camp-travel`).
+>
+> **Do not set `ai.enabled=true` for this demo.** On Consul 2.1.0 it adds an `obo_inbound` ext-proc filter to every `ai-role: ai-agent` pod. With no OAuth/IAM provider configured, that filter rejects the demo's requests with `401 missing or invalid Authorization header`, so every "Book travel" call fails. Enable the `consul-ai` feature gate with `consul operator feature set` (Step 1) instead, and leave `ai.enabled` at its default.
+
 #### 1. Enable the Consul 2.1 `consul-ai` Dynamic Feature Gate
 
 Run this inside the Consul server pod so it uses the 2.1 server binary. A local `consul` CLI older than 2.1 has no `operator feature` subcommand. With ACLs enabled, the command needs a token with `operator:write`, such as the bootstrap token:
@@ -288,7 +320,7 @@ oc exec -n consul statefulset/consul-server -- \
   consul operator feature list -token="$CONSUL_TOKEN"
 ```
 
-On plain Kubernetes, use `kubectl` in place of `oc`. Setting `ai.enabled=true` in the Consul Helm chart also enables the gate.
+On plain Kubernetes, use `kubectl` in place of `oc`. Setting `ai.enabled=true` in the Consul Helm chart also enables the gate, but see the note above before doing so.
 
 #### 2. Configure Namespace & OpenShift SecurityContextConstraints (If on OpenShift)
 ```bash
@@ -311,6 +343,9 @@ helm upgrade --install camp-travel ./helm/camp-travel \
 ---
 
 ## ⚙️ Consul 2.1 Configuration Reference
+
+> [!WARNING]
+> The `builtin/ext-proc` examples below follow the original design intent and **do not apply as written** on Consul 2.1.0. Consul rejects `processorTarget` and `messageTimeout`; the documented form is `Arguments.ProxyType` plus `Config.GrpcService.Target.URI`, and the URI must be `localhost:<port>` or `127.0.0.1:<port>` rather than a Unix socket. The Helm chart in this repository does not ship these blocks.
 
 All Consul 2.1 Agentic Runtime Fabric custom resources are templated in [`helm/camp-travel/templates/consul-crds.yaml`](file:///Users/chrislovett/.gemini/antigravity/scratch/agentic-travel-mesh/helm/camp-travel/templates/consul-crds.yaml):
 
@@ -433,7 +468,7 @@ agentic-travel-mesh/
 │   ├── api_gw/envoy.yaml          # Ingress API Gateway Envoy configuration
 │   ├── travel_igw/envoy.yaml      # AI Inference Gateway (travel-igw) Envoy configuration
 │   └── terminating_gw/envoy.yaml  # Terminating Gateway Envoy configuration
-├── helm/camp-travel/              # Production Helm Chart for Kubernetes & Red Hat OpenShift
+├── helm/camp-travel/              # Demo Helm Chart (Beta features, not for production) for Kubernetes & Red Hat OpenShift
 │   ├── Chart.yaml
 │   ├── values.yaml                # Consul 2.1 consul-ai feature gate & enterprise image values
 │   └── templates/

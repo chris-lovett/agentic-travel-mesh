@@ -247,6 +247,32 @@ async def get_governance_status():
     }
 
 
+@app.get("/api/mesh/tls-status")
+async def get_mesh_tls_status():
+    """Reports the TLS key-exchange groups and versions that this pod's Envoy sidecar
+    has actually negotiated, read from the sidecar's own admin stats (real data, not simulated)."""
+    curves: Dict[str, int] = {}
+    versions: Dict[str, int] = {}
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get("http://127.0.0.1:19000/stats")
+        for line in r.text.splitlines():
+            name, _, val = line.partition(": ")
+            if ".ssl.curves." in name:
+                curves[name.rsplit(".ssl.curves.", 1)[1]] = curves.get(name.rsplit(".ssl.curves.", 1)[1], 0) + int(val)
+            elif ".ssl.versions." in name:
+                versions[name.rsplit(".ssl.versions.", 1)[1]] = versions.get(name.rsplit(".ssl.versions.", 1)[1], 0) + int(val)
+        available = True
+    except Exception:
+        available = False
+    return {
+        "available": available,
+        "curves": curves,
+        "versions": versions,
+        "hybrid_pq_active": curves.get("X25519MLKEM768", 0) > 0,
+    }
+
+
 @app.post("/api/governance/reset-circuit")
 async def reset_circuit_breaker():
     async with httpx.AsyncClient(timeout=3.0) as client:

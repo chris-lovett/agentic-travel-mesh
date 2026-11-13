@@ -1,11 +1,29 @@
 # ---------------------------------------------------------------------------
 # Consul 2.1 Service Mesh & Agentic Runtime Fabric Configuration Entries
 # Requires Feature Gate: $ consul operator feature set consul-ai enabled
-# Controller auto-injects builtin/ext-proc targets:
-#   - processorTarget: "unix:///var/run/consul/csl-mcp-sc.sock" (messageTimeout: "5s")
-#   - processorTarget: "unix:///var/run/consul/csl-ig-pro.sock" (messageTimeout: "15s")
+# Note: this chart ships no envoyExtensions/ext-proc blocks. Consul 2.1.0 rejects the
+# earlier processorTarget/messageTimeout form (see README, Configuration Reference).
 # ---------------------------------------------------------------------------
 
+{{- if .Values.meshTLS.hybridPostQuantum }}
+# Hybrid post-quantum TLS key exchange (Consul 2.1): X25519MLKEM768 with classical X25519 fallback.
+# NOTE: the Mesh config entry is global to the Consul partition, not scoped to this release.
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: Mesh
+metadata:
+  name: mesh
+spec:
+  tls:
+    incoming:
+      tlsMinVersion: TLSv1_3
+      tlsMaxVersion: TLSv1_3
+      ecdhCurves: ["X25519MLKEM768", "X25519"]
+    outgoing:
+      tlsMinVersion: TLSv1_3
+      tlsMaxVersion: TLSv1_3
+      ecdhCurves: ["X25519MLKEM768", "X25519"]
+---
+{{- end }}
 apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
 metadata:
