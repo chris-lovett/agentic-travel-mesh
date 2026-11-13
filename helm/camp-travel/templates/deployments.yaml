@@ -15,7 +15,6 @@ spec:
         consul.hashicorp.com/connect-service: "{{ .Values.experienceUI.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.experienceUI.port }}"
         consul.hashicorp.com/transparent-proxy-exclude-inbound-ports: "3000"
-        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.apiGw.name }}:10000, {{ .Values.bookingAgent.name }}:8086, {{ .Values.indigoAnalytics.name }}:8089, {{ .Values.otelCollector.name }}:4318"
     spec:
       serviceAccountName: {{ .Values.experienceUI.name }}
       containers:
@@ -107,7 +106,6 @@ spec:
         consul.hashicorp.com/ai-role: "ai-agent"
         consul.hashicorp.com/connect-service: "{{ .Values.orchestrator.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.orchestrator.port }}"
-        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.bookingAgent.name }}:8086, {{ .Values.weatherAgent.name }}:8087, {{ .Values.travelIgw.name }}:10001"
     spec:
       serviceAccountName: {{ .Values.orchestrator.name }}
       containers:
@@ -156,7 +154,6 @@ spec:
         consul.hashicorp.com/ai-role: "ai-agent"
         consul.hashicorp.com/connect-service: "{{ .Values.bookingAgent.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.bookingAgent.port }}"
-        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.hotelMcp.name }}:8083, {{ .Values.flightMcp.name }}:8084, {{ .Values.terminatingGw.name }}:10002"
     spec:
       serviceAccountName: {{ .Values.bookingAgent.name }}
       containers:
@@ -205,7 +202,6 @@ spec:
         consul.hashicorp.com/ai-role: "ai-agent"
         consul.hashicorp.com/connect-service: "{{ .Values.weatherAgent.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.weatherAgent.port }}"
-        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.weatherMcp.name }}:8082, {{ .Values.travelIgw.name }}:10001"
     spec:
       serviceAccountName: {{ .Values.weatherAgent.name }}
       containers:
@@ -252,7 +248,6 @@ spec:
         consul.hashicorp.com/ai-role: "mcp-server"
         consul.hashicorp.com/connect-service: "{{ .Values.hotelMcp.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.hotelMcp.port }}"
-        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.otelCollector.name }}:4318, {{ .Values.indigoAnalytics.name }}:8089"
     spec:
       serviceAccountName: {{ .Values.hotelMcp.name }}
       containers:
@@ -299,7 +294,6 @@ spec:
         consul.hashicorp.com/ai-role: "mcp-server"
         consul.hashicorp.com/connect-service: "{{ .Values.flightMcp.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.flightMcp.port }}"
-        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.otelCollector.name }}:4318, {{ .Values.indigoAnalytics.name }}:8089"
     spec:
       serviceAccountName: {{ .Values.flightMcp.name }}
       containers:
@@ -346,7 +340,6 @@ spec:
         consul.hashicorp.com/ai-role: "mcp-server"
         consul.hashicorp.com/connect-service: "{{ .Values.weatherMcp.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.weatherMcp.port }}"
-        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.otelCollector.name }}:4318"
     spec:
       serviceAccountName: {{ .Values.weatherMcp.name }}
       containers:
@@ -429,7 +422,6 @@ spec:
         consul.hashicorp.com/ai-role: "inference-model"
         consul.hashicorp.com/connect-service: "{{ .Values.llmBackend.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.llmBackend.port }}"
-        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.otelCollector.name }}:4318, {{ .Values.indigoAnalytics.name }}:8089"
     spec:
       serviceAccountName: {{ .Values.llmBackend.name }}
       containers:
@@ -548,7 +540,6 @@ spec:
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/connect-service: "{{ .Values.otelCollector.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.otelCollector.port }}"
-        consul.hashicorp.com/connect-service-upstreams: "{{ .Values.indigoAnalytics.name }}:8089"
     spec:
       serviceAccountName: {{ .Values.otelCollector.name }}
       containers:

@@ -273,9 +273,22 @@ open http://localhost:3000
 ### Option C: Kubernetes & Red Hat OpenShift via Helm
 
 #### 1. Enable the Consul 2.1 `consul-ai` Dynamic Feature Gate
+
+Run this inside the Consul server pod so it uses the 2.1 server binary. A local `consul` CLI older than 2.1 has no `operator feature` subcommand. With ACLs enabled, the command needs a token with `operator:write`, such as the bootstrap token:
+
 ```bash
-consul operator feature set consul-ai enabled
+# Adjust -n consul / statefulset/consul-server if your Consul release uses another namespace or name
+CONSUL_TOKEN=$(oc get secret -n consul consul-bootstrap-acl-token -o jsonpath='{.data.token}' | base64 -d)
+
+oc exec -n consul statefulset/consul-server -- \
+  consul operator feature set -token="$CONSUL_TOKEN" consul-ai enabled
+
+# Verify: consul-ai should show Desired=true, Effective=true
+oc exec -n consul statefulset/consul-server -- \
+  consul operator feature list -token="$CONSUL_TOKEN"
 ```
+
+On plain Kubernetes, use `kubectl` in place of `oc`. Setting `ai.enabled=true` in the Consul Helm chart also enables the gate.
 
 #### 2. Configure Namespace & OpenShift SecurityContextConstraints (If on OpenShift)
 ```bash

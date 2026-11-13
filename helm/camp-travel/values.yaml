@@ -3,7 +3,8 @@ global:
   domain: consul
 
 # Consul 2.1 Agentic Runtime Fabric (Enterprise) Configuration
-# Prerequisite: $ consul operator feature set consul-ai enabled
+# Prerequisite: enable the gate on the Consul 2.1 server (requires an ACL token with operator:write).
+# See README "Option C", Step 1: consul operator feature set -token="$CONSUL_TOKEN" consul-ai enabled
 ai:
   enabled: true
   featureGate: "consul-ai"

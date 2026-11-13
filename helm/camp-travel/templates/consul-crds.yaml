@@ -27,11 +27,6 @@ metadata:
     consul.hashicorp.com/oauth-client-enabled: "true"
 spec:
   protocol: http
-  envoyExtensions:
-    - name: builtin/ext-proc
-      arguments:
-        processorTarget: "unix:///var/run/consul/csl-mcp-sc.sock"
-        messageTimeout: "5s"
 ---
 # AI Agent Workload: Booking Agent (ai-agent + OAuth OBO + csl-mcp-sc Unix Socket ext-proc)
 apiVersion: consul.hashicorp.com/v1alpha1
@@ -43,11 +38,6 @@ metadata:
     consul.hashicorp.com/oauth-client-enabled: "true"
 spec:
   protocol: http
-  envoyExtensions:
-    - name: builtin/ext-proc
-      arguments:
-        processorTarget: "unix:///var/run/consul/csl-mcp-sc.sock"
-        messageTimeout: "5s"
 ---
 # AI Agent Workload: Weather Agent (ai-agent + OAuth OBO + csl-mcp-sc Unix Socket ext-proc)
 apiVersion: consul.hashicorp.com/v1alpha1
@@ -59,11 +49,6 @@ metadata:
     consul.hashicorp.com/oauth-client-enabled: "true"
 spec:
   protocol: http
-  envoyExtensions:
-    - name: builtin/ext-proc
-      arguments:
-        processorTarget: "unix:///var/run/consul/csl-mcp-sc.sock"
-        messageTimeout: "5s"
 ---
 # MCP Server Workload: Hotel Booking MCP (mcp-server + OAuth OBO)
 apiVersion: consul.hashicorp.com/v1alpha1
@@ -109,11 +94,6 @@ metadata:
     consul.hashicorp.com/ai-otlp-endpoint: "http://{{ .Values.otelCollector.name }}:4318"
 spec:
   protocol: http
-  envoyExtensions:
-    - name: builtin/ext-proc
-      arguments:
-        processorTarget: "unix:///var/run/consul/csl-ig-pro.sock"
-        messageTimeout: "15s"
 ---
 # Inference Model Workload: Foundation Model Backend (inference-model)
 apiVersion: consul.hashicorp.com/v1alpha1
