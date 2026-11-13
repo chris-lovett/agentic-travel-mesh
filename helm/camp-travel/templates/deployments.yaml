@@ -11,6 +11,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.experienceUI.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/connect-service: "{{ .Values.experienceUI.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.experienceUI.port }}"
@@ -65,6 +66,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.apiGw.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/connect-service: "{{ .Values.apiGw.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.apiGw.port }}"
@@ -102,6 +104,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.orchestrator.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/ai-role: "ai-agent"
         consul.hashicorp.com/connect-service: "{{ .Values.orchestrator.name }}"
@@ -150,6 +153,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.bookingAgent.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/ai-role: "ai-agent"
         consul.hashicorp.com/connect-service: "{{ .Values.bookingAgent.name }}"
@@ -198,6 +202,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.weatherAgent.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/ai-role: "ai-agent"
         consul.hashicorp.com/connect-service: "{{ .Values.weatherAgent.name }}"
@@ -244,6 +249,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.hotelMcp.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/ai-role: "mcp-server"
         consul.hashicorp.com/connect-service: "{{ .Values.hotelMcp.name }}"
@@ -290,6 +296,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.flightMcp.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/ai-role: "mcp-server"
         consul.hashicorp.com/connect-service: "{{ .Values.flightMcp.name }}"
@@ -336,6 +343,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.weatherMcp.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/ai-role: "mcp-server"
         consul.hashicorp.com/connect-service: "{{ .Values.weatherMcp.name }}"
@@ -380,6 +388,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.travelIgw.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/service-kind: "inference-gateway"
         consul.hashicorp.com/connect-service: "{{ .Values.travelIgw.name }}"
@@ -418,6 +427,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.llmBackend.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/ai-role: "inference-model"
         consul.hashicorp.com/connect-service: "{{ .Values.llmBackend.name }}"
@@ -464,6 +474,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.terminatingGw.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/connect-service: "{{ .Values.terminatingGw.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.terminatingGw.port }}"
@@ -537,6 +548,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.otelCollector.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/connect-service: "{{ .Values.otelCollector.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.otelCollector.port }}"
@@ -580,6 +592,7 @@ spec:
     metadata:
       labels: { app: {{ .Values.indigoAnalytics.name }} }
       annotations:
+        checksum/ui-html: {{ .Files.Get "files/index.html" | sha256sum }}
         consul.hashicorp.com/connect-inject: "true"
         consul.hashicorp.com/connect-service: "{{ .Values.indigoAnalytics.name }}"
         consul.hashicorp.com/connect-service-port: "{{ .Values.indigoAnalytics.port }}"

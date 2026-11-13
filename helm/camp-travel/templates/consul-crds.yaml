@@ -1,6 +1,9 @@
 # ---------------------------------------------------------------------------
 # Consul 2.1 Service Mesh & Agentic Runtime Fabric Configuration Entries
 # Requires Feature Gate: $ consul operator feature set consul-ai enabled
+# Controller auto-injects builtin/ext-proc targets:
+#   - processorTarget: "unix:///var/run/consul/csl-mcp-sc.sock" (messageTimeout: "5s")
+#   - processorTarget: "unix:///var/run/consul/csl-ig-pro.sock" (messageTimeout: "15s")
 # ---------------------------------------------------------------------------
 
 apiVersion: consul.hashicorp.com/v1alpha1

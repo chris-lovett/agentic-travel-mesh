@@ -81,10 +81,11 @@ data:
 
     @app.get("/", response_class=HTMLResponse)
     async def serve_ui():
+        no_cache = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
         if os.path.exists("frontend/static/index.html"):
-            return FileResponse("frontend/static/index.html")
+            return FileResponse("frontend/static/index.html", headers=no_cache)
         with open("/app/static/index.html", "r") as f:
-            return f.read()
+            return HTMLResponse(content=f.read(), headers=no_cache)
 
 
     @app.post("/api/auth/obo-token")

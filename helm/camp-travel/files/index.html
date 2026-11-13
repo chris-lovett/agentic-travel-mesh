@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Consul Agentic Runtime Fabric — Linear Workspace</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,640 +12,696 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     :root {
-      --bg-sidebar: #08090A;
-      --bg-canvas: #0F1012;
-      --bg-surface: #141518;
-      --bg-elevated: #1A1C20;
-      --border-hairline: rgba(255, 255, 255, 0.065);
-      --border-strong: rgba(255, 255, 255, 0.12);
-      --text-primary: #F7F8F8;
-      --text-secondary: #8A8F98;
-      --text-muted: #5C6066;
-      --linear-accent: #5E6AD2;
-      --linear-accent-hover: #6E7AE2;
+      --ln-sidebar: #090A0B;
+      --ln-bg: #0C0D0E;
+      --ln-surface: #121316;
+      --ln-hover: rgba(255, 255, 255, 0.035);
+      --ln-border: rgba(255, 255, 255, 0.07);
+      --ln-border-strong: rgba(255, 255, 255, 0.12);
+      --ln-text: #F2F3F5;
+      --ln-muted: #8A8F98;
+      --ln-dim: #575B62;
+      --ln-accent: #5E6AD2;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background-color: var(--bg-canvas);
-      color: var(--text-primary);
-      letter-spacing: -0.011em;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--ln-bg);
+      color: var(--ln-text);
       font-size: 13px;
+      letter-spacing: -0.011em;
       -webkit-font-smoothing: antialiased;
       margin: 0;
     }
 
     code, pre, .font-mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      letter-spacing: -0.02em;
     }
 
-    /* Linear Hairline Borders & Surfaces */
-    .ln-border-b { border-bottom: 1px solid var(--border-hairline); }
-    .ln-border-t { border-top: 1px solid var(--border-hairline); }
-    .ln-border-r { border-right: 1px solid var(--border-hairline); }
-    .ln-border-l { border-left: 1px solid var(--border-hairline); }
-    .ln-card {
-      background-color: var(--bg-surface);
-      border: 1px solid var(--border-hairline);
-      border-radius: 8px;
-    }
+    .ln-border-b { border-bottom: 1px solid var(--ln-border); }
+    .ln-border-t { border-top: 1px solid var(--ln-border); }
+    .ln-border-r { border-right: 1px solid var(--ln-border); }
+    .ln-border-l { border-left: 1px solid var(--ln-border); }
 
-    /* Linear Sidebar Navigation Item */
-    .ln-nav-item {
+    /* Linear Sidebar Item */
+    .ln-nav {
       display: flex;
       align-items: center;
       justify-content: space-between;
       width: 100%;
-      padding: 6px 10px;
-      border-radius: 6px;
-      color: var(--text-secondary);
+      height: 28px;
+      padding: 0 8px;
+      border-radius: 5px;
+      color: var(--ln-muted);
       font-size: 13px;
-      font-weight: 500;
-      transition: background-color 0.12s ease, color 0.12s ease;
-      text-align: left;
+      font-weight: 450;
+      transition: background 0.1s ease, color 0.1s ease;
     }
-    .ln-nav-item:hover {
-      background-color: rgba(255, 255, 255, 0.04);
-      color: var(--text-primary);
+    .ln-nav:hover {
+      background: var(--ln-hover);
+      color: var(--ln-text);
     }
-    .ln-nav-item.active-act {
-      background-color: rgba(94, 106, 210, 0.14);
+    .ln-nav.active-act {
+      background: rgba(255, 255, 255, 0.07);
       color: #FFFFFF;
+      font-weight: 500;
+    }
+
+    /* Linear Issue Row */
+    .ln-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 38px;
+      padding: 6px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+      transition: background 0.08s ease;
+    }
+    .ln-row:hover {
+      background: var(--ln-hover);
+    }
+
+    /* Linear Group Header */
+    .ln-group-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 32px;
+      padding: 0 20px;
+      background: #101114;
+      border-bottom: 1px solid var(--ln-border);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--ln-muted);
+    }
+
+    /* Linear Pill / Tag */
+    .ln-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 20px;
+      padding: 0 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 450;
+      border: 1px solid var(--ln-border);
+      background: rgba(255, 255, 255, 0.025);
+      color: var(--ln-muted);
     }
 
     /* Linear Primary Button */
-    .ln-btn-primary {
-      background-color: var(--linear-accent);
-      color: #FFFFFF;
-      font-weight: 500;
-      font-size: 12px;
-      border-radius: 6px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-      transition: background-color 0.12s ease, transform 0.08s ease;
-    }
-    .ln-btn-primary:hover {
-      background-color: var(--linear-accent-hover);
-    }
-    .ln-btn-primary:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
-
-    /* Linear Secondary Button */
-    .ln-btn-secondary {
-      background-color: #191B1F;
-      color: #D0D6E0;
-      font-weight: 500;
-      font-size: 12px;
-      border-radius: 6px;
-      border: 1px solid var(--border-strong);
-      transition: background-color 0.12s ease, color 0.12s ease;
-    }
-    .ln-btn-secondary:hover {
-      background-color: #22252A;
-      color: #FFFFFF;
-    }
-
-    /* Linear Property Input */
-    .ln-input {
-      background-color: transparent;
-      border: 1px solid transparent;
+    .ln-btn {
+      height: 28px;
+      padding: 0 11px;
       border-radius: 5px;
-      color: var(--text-primary);
-      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--ln-accent);
+      color: #FFFFFF;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.12s ease;
+    }
+    .ln-btn:hover { background: #6C78E0; }
+    .ln-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .ln-btn-ghost {
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--ln-text);
+      border: 1px solid var(--ln-border);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.12s ease;
+    }
+    .ln-btn-ghost:hover { background: rgba(255, 255, 255, 0.08); }
+
+    .ln-prop-input {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: var(--ln-text);
+      padding: 2px 6px;
       font-size: 12.5px;
       text-align: right;
-      transition: background-color 0.12s ease, border-color 0.12s ease;
+      width: 150px;
     }
-    .ln-input:hover {
-      background-color: rgba(255, 255, 255, 0.03);
-    }
-    .ln-input:focus {
+    .ln-prop-input:hover { background: rgba(255, 255, 255, 0.04); }
+    .ln-prop-input:focus {
       outline: none;
-      background-color: #08090A;
-      border-color: var(--linear-accent);
+      background: #090A0B;
+      border-color: var(--ln-accent);
       text-align: left;
     }
 
-    /* Subtle Scrollbars */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
-
-    @keyframes pulseDash {
-      to { stroke-dashoffset: -16; }
-    }
-    .ln-flow-active {
-      stroke-dasharray: 4 4;
-      animation: pulseDash 0.9s linear infinite;
-    }
   </style>
 </head>
-<body class="h-screen w-screen overflow-hidden flex flex-col lg:flex-row select-none">
+<body class="h-screen w-screen overflow-hidden flex select-none">
 
   <!-- ===================================================================== -->
-  <!-- 1. LEFT SIDEBAR (Linear App Navigation & Governance Scenarios)        -->
+  <!-- LEFT SIDEBAR (Linear 220px Navigation Rail)                           -->
   <!-- ===================================================================== -->
-  <aside class="w-full lg:w-60 bg-[#08090A] ln-border-r flex flex-col justify-between shrink-0">
+  <aside class="w-[228px] bg-[#090A0B] ln-border-r flex flex-col justify-between shrink-0">
 
-    <div class="p-3 space-y-5">
-      <!-- Workspace Header -->
+    <div class="p-2.5 space-y-4">
+      <!-- Linear Workspace Switcher -->
       <div class="flex items-center justify-between px-2 py-1">
-        <div class="flex items-center space-x-2.5">
-          <div class="w-5 h-5 rounded bg-[#5E6AD2] flex items-center justify-center text-white text-[11px] font-semibold shadow-sm">
+        <div class="flex items-center space-x-2">
+          <div class="w-4 h-4 rounded-[4px] bg-[#5E6AD2] flex items-center justify-center text-[10px] font-semibold text-white">
             C
           </div>
-          <span class="font-semibold text-[13px] text-[#F7F8F8] tracking-tight">Consul Agentic Runtime Fabric</span>
+          <span class="font-medium text-[13px] text-[#F2F3F5] truncate">Consul Agentic Runtime Fabric</span>
         </div>
-        <span class="text-[10px] font-mono text-[#8A8F98] bg-white/[0.04] px-1.5 py-0.5 rounded">2.1</span>
       </div>
 
-      <!-- Views: 5-Act Governance Scenarios -->
-      <div class="space-y-1">
-        <div class="px-2.5 pb-1 text-[11px] font-medium text-[#5C6066] uppercase tracking-wider">
-          Governance Scenarios
+      <!-- New Trip Request Button (Linear "New Issue" Button) -->
+      <div class="px-1">
+        <button type="button" onclick="document.getElementById('trip-form').requestSubmit()" class="w-full h-7 px-2.5 rounded-[5px] bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.08] text-[#F2F3F5] text-[12px] font-medium flex items-center justify-between transition">
+          <span class="flex items-center space-x-2">
+            <i class="fa-regular fa-pen-to-square text-[11px] text-[#8A8F98]"></i>
+            <span>Run Active Scenario</span>
+          </span>
+          <kbd class="text-[10px] font-mono text-[#575B62] bg-black/40 px-1 rounded">⏎</kbd>
+        </button>
+      </div>
+
+      <!-- Views: 5-Act Scenarios -->
+      <div class="space-y-0.5">
+        <div class="px-2 py-1 text-[11px] font-medium text-[#575B62]">
+          Scenarios
         </div>
 
-        <button onclick="triggerActScenario('normal')" id="act-btn-normal" class="ln-nav-item active-act">
-          <span class="flex items-center space-x-2.5">
-            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <button onclick="triggerActScenario('normal')" id="act-btn-normal" class="ln-nav active-act">
+          <span class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full border border-emerald-400 bg-emerald-400/20"></span>
             <span>Baseline Happy Path</span>
           </span>
-          <kbd class="text-[10px] font-mono text-[#5C6066]">1</kbd>
+          <span class="text-[11px] font-mono text-[#575B62]">1</span>
         </button>
 
-        <button onclick="triggerActScenario('act1_llm_failover')" id="act-btn-act1_llm_failover" class="ln-nav-item">
-          <span class="flex items-center space-x-2.5">
-            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-            <span>Act 1 · AI GW Failover</span>
+        <button onclick="triggerActScenario('act1_llm_failover')" id="act-btn-act1_llm_failover" class="ln-nav">
+          <span class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full border border-amber-400 bg-amber-400/20"></span>
+            <span>Act 1 · AI Failover</span>
           </span>
-          <kbd class="text-[10px] font-mono text-[#5C6066]">2</kbd>
+          <span class="text-[11px] font-mono text-[#575B62]">2</span>
         </button>
 
-        <button onclick="triggerActScenario('act2_unauthorized_tool')" id="act-btn-act2_unauthorized_tool" class="ln-nav-item">
-          <span class="flex items-center space-x-2.5">
-            <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+        <button onclick="triggerActScenario('act2_unauthorized_tool')" id="act-btn-act2_unauthorized_tool" class="ln-nav">
+          <span class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full border border-purple-400 bg-purple-400/20"></span>
             <span>Act 2 · MCP Tool Policy</span>
           </span>
-          <kbd class="text-[10px] font-mono text-[#5C6066]">3</kbd>
+          <span class="text-[11px] font-mono text-[#575B62]">3</span>
         </button>
 
-        <button onclick="triggerActScenario('act3_contractor_obo')" id="act-btn-act3_contractor_obo" class="ln-nav-item">
-          <span class="flex items-center space-x-2.5">
-            <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+        <button onclick="triggerActScenario('act3_contractor_obo')" id="act-btn-act3_contractor_obo" class="ln-nav">
+          <span class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full border border-sky-400 bg-sky-400/20"></span>
             <span>Act 3 · OBO Identity</span>
           </span>
-          <kbd class="text-[10px] font-mono text-[#5C6066]">4</kbd>
+          <span class="text-[11px] font-mono text-[#575B62]">4</span>
         </button>
 
-        <button onclick="triggerActScenario('act4_cycle_loop')" id="act-btn-act4_cycle_loop" class="ln-nav-item">
-          <span class="flex items-center space-x-2.5">
-            <span class="w-2 h-2 rounded-full bg-rose-400"></span>
+        <button onclick="triggerActScenario('act4_cycle_loop')" id="act-btn-act4_cycle_loop" class="ln-nav">
+          <span class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full border border-rose-400 bg-rose-400/20"></span>
             <span>Act 4 · Loop Breaker</span>
           </span>
-          <kbd class="text-[10px] font-mono text-[#5C6066]">5</kbd>
+          <span class="text-[11px] font-mono text-[#575B62]">5</span>
         </button>
       </div>
 
-      <!-- Identity Context Section -->
-      <div class="space-y-2 pt-2 ln-border-t">
-        <div class="px-2.5 text-[11px] font-medium text-[#5C6066] uppercase tracking-wider">
-          Delegated User (OBO)
+      <!-- Workspace Views -->
+      <div class="space-y-0.5 pt-2 ln-border-t">
+        <div class="px-2 py-1 text-[11px] font-medium text-[#575B62]">
+          Inspector
         </div>
-        <div class="px-2">
-          <select id="persona-select" onchange="handlePersonaChange()" class="w-full bg-[#141518] border border-white/[0.08] rounded-md px-2.5 py-1.5 text-[12px] text-[#F7F8F8] font-medium focus:outline-none focus:border-[#5E6AD2] cursor-pointer">
-            <option value="traveler-101">Alex Mercer · VP Eng</option>
-            <option value="contractor-202">Sam Taylor · Contractor</option>
-          </select>
-        </div>
-
-        <div class="px-2.5 pt-1 space-y-1.5">
-          <div class="flex items-center justify-between text-[11px]">
-            <span class="text-[#8A8F98]">Role</span>
-            <span id="obo-role-badge" class="text-[#F7F8F8] font-medium">VP Engineering</span>
-          </div>
-          <div id="obo-scopes-list" class="flex flex-wrap gap-1 pt-0.5">
-            <span class="text-[10px] font-mono bg-white/[0.04] text-[#8A8F98] px-1.5 py-0.5 rounded">travel:read</span>
-            <span class="text-[10px] font-mono bg-white/[0.04] text-[#8A8F98] px-1.5 py-0.5 rounded">travel:plan</span>
-            <span class="text-[10px] font-mono bg-white/[0.04] text-[#8A8F98] px-1.5 py-0.5 rounded">booking:reserve</span>
-            <span class="text-[10px] font-mono bg-white/[0.04] text-[#8A8F98] px-1.5 py-0.5 rounded">partner:gds_egress</span>
-          </div>
-          <div id="obo-chain-box" class="text-[11px] text-[#5C6066] pt-1 leading-snug">
-            Scopes automatically narrow per downstream sub-agent hop.
-          </div>
-        </div>
+        <button type="button" onclick="toggleTopologyPanel()" class="ln-nav">
+          <span class="flex items-center space-x-2">
+            <i class="fa-solid fa-diagram-project text-[11px] w-3.5 text-center"></i>
+            <span>Mesh Architecture Map</span>
+          </span>
+          <span class="text-[10px] font-mono text-[#575B62]">M</span>
+        </button>
+        <button type="button" onclick="openInspectorModal()" class="ln-nav">
+          <span class="flex items-center space-x-2">
+            <i class="fa-solid fa-code text-[11px] w-3.5 text-center"></i>
+            <span>CRDs &amp; OTel Spans</span>
+          </span>
+          <span class="text-[10px] font-mono text-[#575B62]">Act 5</span>
+        </button>
       </div>
     </div>
 
-    <!-- Sidebar Footer: Circuit Status & CRD Modal Trigger -->
-    <div class="p-3 space-y-2 ln-border-t bg-[#08090A]">
-      <div id="circuit-pill-container" class="flex items-center justify-between px-2.5 py-1.5 rounded-md bg-[#141518] border border-white/[0.06] text-[12px]">
+    <!-- Bottom Status Footer -->
+    <div class="p-2.5 space-y-2 ln-border-t">
+      <div id="circuit-pill-container" class="flex items-center justify-between px-2 py-1.5 rounded-[5px] bg-white/[0.02] border border-white/[0.05] text-[12px]">
         <div class="flex items-center space-x-2">
-          <span id="circuit-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span id="circuit-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
           <span class="text-[#8A8F98]">Circuit</span>
-          <span id="circuit-state-label" class="text-[#F7F8F8] font-medium">CLOSED</span>
+          <span id="circuit-state-label" class="text-[#F2F3F5] font-medium">CLOSED</span>
         </div>
-        <button id="btn-reset-circuit" onclick="resetCircuitBreaker()" class="hidden text-[11px] text-rose-400 hover:text-rose-300 font-medium">
+        <button id="btn-reset-circuit" onclick="resetCircuitBreaker()" class="hidden text-[11px] text-rose-400 hover:underline">
           Reset
         </button>
       </div>
-
-      <button onclick="openInspectorModal()" class="ln-nav-item w-full justify-between">
-        <span class="flex items-center space-x-2">
-          <i class="fa-solid fa-terminal text-[11px] text-[#8A8F98]"></i>
-          <span>CRDs &amp; OTel Spans</span>
-        </span>
-        <span class="text-[10px] font-mono text-[#5C6066]">Act 5</span>
-      </button>
     </div>
 
   </aside>
 
   <!-- ===================================================================== -->
-  <!-- 2. CENTER WORKSPACE (Linear Header + Architecture Map + Activity)     -->
+  <!-- CENTER VIEW (Linear Issue List + Collapsible Architecture Drawer)     -->
   <!-- ===================================================================== -->
-  <div class="flex-1 flex flex-col h-full overflow-hidden bg-[#0F1012]">
+  <main class="flex-1 flex flex-col h-full overflow-hidden bg-[#0C0D0E]">
 
-    <!-- Top 48px Linear Breadcrumb Bar -->
-    <header class="h-12 px-6 ln-border-b flex items-center justify-between shrink-0">
-      <div class="flex items-center space-x-2 text-[13px]">
-        <span class="text-[#8A8F98]">Architecture</span>
-        <span class="text-[#5C6066]">/</span>
-        <span id="active-scenario-badge" class="text-[#F7F8F8] font-medium">Baseline Happy Path</span>
-        <span id="agent-status" class="ml-2 text-[11px] font-mono px-2 py-0.5 rounded bg-white/[0.05] text-[#8A8F98]">Ready</span>
+    <!-- Top 44px Linear View Header Bar -->
+    <header class="h-11 px-5 ln-border-b flex items-center justify-between shrink-0">
+      <div class="flex items-center space-x-2.5">
+        <span class="text-[#8A8F98] font-medium">Mesh Execution</span>
+        <span class="text-[#575B62]">/</span>
+        <span id="active-scenario-badge" class="text-[#F2F3F5] font-medium">Baseline Happy Path</span>
+        <span id="agent-status" class="ln-tag">Ready</span>
       </div>
 
       <div class="flex items-center space-x-2">
-        <span class="text-[11px] font-mono text-[#5C6066] hidden sm:inline">consul-ai=enabled</span>
-        <button type="button" onclick="document.getElementById('trip-form').requestSubmit()" class="ln-btn-primary px-3 py-1.5 flex items-center space-x-1.5">
+        <button type="button" onclick="toggleTopologyPanel()" id="btn-toggle-map" class="ln-btn-ghost">
+          <i class="fa-solid fa-sitemap text-[10px] text-[#8A8F98]"></i>
+          <span>Architecture Map</span>
+        </button>
+        <button type="button" onclick="document.getElementById('trip-form').requestSubmit()" class="ln-btn">
           <i class="fa-solid fa-play text-[9px]"></i>
           <span>Run Scenario</span>
         </button>
       </div>
     </header>
 
-    <!-- Scrollable Center Canvas -->
-    <div class="flex-1 overflow-y-auto p-6 space-y-6">
+    <!-- Sub-Header Filter / Description Bar (Linear Display Bar) -->
+    <div class="h-9 px-5 ln-border-b flex items-center justify-between bg-[#0E0F11] text-[12px] text-[#8A8F98] shrink-0">
+      <span id="scenario-subtitle" class="truncate">
+        Click "Run Scenario" or press 1–5 to trace a live request through Consul's Agentic Runtime Fabric.
+      </span>
+      <span class="font-mono text-[11px] text-[#575B62] shrink-0 ml-4">consul-ai=enabled</span>
+    </div>
 
-      <!-- Section A: Minimalist Linear Architecture Graph -->
-      <div class="ln-card p-5 space-y-4">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-[13px] font-medium text-[#F7F8F8]">Service Mesh Topology</h2>
-            <p id="scenario-subtitle" class="text-[12px] text-[#8A8F98] mt-0.5">
-              End-to-end multi-agent request flow with delegated OBO identity and sidecar policy checks.
-            </p>
-          </div>
-          <div class="flex items-center space-x-4 text-[11px] text-[#8A8F98]">
-            <span class="flex items-center space-x-1.5"><span class="w-1.5 h-1.5 rounded-full bg-[#5E6AD2]"></span><span>AI Agent</span></span>
-            <span class="flex items-center space-x-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span><span>Healthy</span></span>
-            <span class="flex items-center space-x-1.5"><span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span><span>Failover</span></span>
-            <span class="flex items-center space-x-1.5"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span><span>Intercepted</span></span>
-          </div>
-        </div>
+    <!-- Center Scrollable List Area -->
+    <div class="flex-1 overflow-y-auto">
 
-        <!-- Ultra-Clean Linear SVG Diagram -->
-        <div class="w-full overflow-x-auto py-1">
-          <svg viewBox="0 0 720 210" class="w-full h-auto min-w-[580px]">
+      <!-- Collapsible Architecture Map Drawer (Visible by default, toggleable with 'M') -->
+      <div id="topology-drawer" class="ln-border-b bg-[#0A0B0D] px-5 py-4">
+        <div class="max-w-4xl mx-auto">
+          <svg viewBox="0 0 720 175" class="w-full h-auto">
             <defs>
-              <marker id="ln-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#3E4149" />
+              <marker id="arr" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#3A3D45" />
               </marker>
-              <marker id="ln-arrow-active" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <marker id="arr-hi" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
                 <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#5E6AD2" />
               </marker>
             </defs>
 
-            <!-- Connectors -->
-            <line x1="125" y1="105" x2="175" y2="105" stroke="#5E6AD2" stroke-width="1.5" marker-end="url(#ln-arrow-active)" class="ln-flow-active" />
-            <path d="M 245 78 L 245 38 L 335 38" fill="none" stroke="#2E3038" stroke-width="1.25" marker-end="url(#ln-arrow)" />
-            <line x1="485" y1="38" x2="535" y2="38" stroke="#2E3038" stroke-width="1.25" marker-end="url(#ln-arrow)" />
-            <line x1="315" y1="105" x2="335" y2="105" stroke="#5E6AD2" stroke-width="1.5" marker-end="url(#ln-arrow-active)" class="ln-flow-active" />
-            <line x1="485" y1="105" x2="535" y2="105" stroke="#5E6AD2" stroke-width="1.5" marker-end="url(#ln-arrow-active)" class="ln-flow-active" />
-            <path d="M 485 118 L 510 118 L 510 172 L 535 172" fill="none" stroke="#2E3038" stroke-width="1.25" marker-end="url(#ln-arrow)" />
-            <line x1="410" y1="132" x2="410" y2="148" stroke="#2E3038" stroke-width="1.25" stroke-dasharray="2 2" marker-end="url(#ln-arrow)" />
+            <!-- Clean Orthogonal Lines -->
+            <line x1="125" y1="88" x2="175" y2="88" stroke="#5E6AD2" stroke-width="1.25" marker-end="url(#arr-hi)" />
+            <path d="M 245 64 L 245 30 L 335 30" fill="none" stroke="#2A2D34" stroke-width="1.2" marker-end="url(#arr)" />
+            <line x1="485" y1="30" x2="535" y2="30" stroke="#2A2D34" stroke-width="1.2" marker-end="url(#arr)" />
+            <line x1="315" y1="88" x2="335" y2="88" stroke="#5E6AD2" stroke-width="1.25" marker-end="url(#arr-hi)" />
+            <line x1="485" y1="88" x2="535" y2="88" stroke="#5E6AD2" stroke-width="1.25" marker-end="url(#arr-hi)" />
+            <path d="M 485 100 L 510 100 L 510 146 L 535 146" fill="none" stroke="#2A2D34" stroke-width="1.2" marker-end="url(#arr)" />
+            <line x1="410" y1="112" x2="410" y2="124" stroke="#2A2D34" stroke-width="1.2" stroke-dasharray="2 2" marker-end="url(#arr)" />
 
-            <!-- Node 1: Ingress -->
-            <g transform="translate(15, 80)">
-              <rect width="110" height="50" rx="6" fill="#0F1012" stroke="#26282E" stroke-width="1"/>
-              <circle cx="14" cy="18" r="3" fill="#5E6AD2"/>
-              <text x="24" y="21" fill="#F7F8F8" font-size="11" font-weight="500">api-gw</text>
-              <text x="14" y="38" fill="#8A8F98" font-size="9.5">OBO Token Exchange</text>
+            <!-- Nodes -->
+            <g transform="translate(15, 66)">
+              <rect width="110" height="44" rx="5" fill="#121316" stroke="#262930"/>
+              <text x="12" y="18" fill="#F2F3F5" font-size="10.5" font-weight="500">api-gw</text>
+              <text x="12" y="33" fill="#8A8F98" font-size="9">OBO Ingress</text>
             </g>
 
-            <!-- Node 2: Orchestrator -->
-            <g transform="translate(178, 80)">
-              <rect width="135" height="50" rx="6" fill="#0F1012" stroke="#2E323B" stroke-width="1"/>
-              <circle cx="14" cy="18" r="3" fill="#5E6AD2"/>
-              <text x="24" y="21" fill="#F7F8F8" font-size="11" font-weight="500">orchestrator</text>
-              <text x="14" y="38" fill="#8A8F98" font-size="9.5">ai-agent · Scope Narrowing</text>
+            <g transform="translate(178, 66)">
+              <rect width="135" height="44" rx="5" fill="#121316" stroke="#2E323C"/>
+              <text x="12" y="18" fill="#F2F3F5" font-size="10.5" font-weight="500">orchestrator</text>
+              <text x="12" y="33" fill="#8A8F98" font-size="9">ai-agent · Narrowing</text>
             </g>
 
-            <!-- Node 3: Inference Gateway -->
-            <g transform="translate(338, 13)">
-              <rect width="145" height="50" rx="6" fill="#0F1012" stroke="#26282E" stroke-width="1"/>
-              <circle cx="14" cy="18" r="3" fill="#F59E0B"/>
-              <text x="24" y="21" fill="#F7F8F8" font-size="11" font-weight="500">travel-igw</text>
-              <text x="14" y="38" fill="#8A8F98" font-size="9.5">csl-inf-rt · Vault Key</text>
+            <g transform="translate(338, 8)">
+              <rect width="145" height="44" rx="5" fill="#121316" stroke="#262930"/>
+              <text x="12" y="18" fill="#F2F3F5" font-size="10.5" font-weight="500">travel-igw</text>
+              <text x="12" y="33" fill="#8A8F98" font-size="9">csl-inf-rt · AI Gateway</text>
             </g>
 
-            <!-- Node 4: Model Pool -->
-            <g transform="translate(538, 13)">
-              <rect id="svg-node-llm" width="168" height="50" rx="6" fill="#0F1012" stroke="#26282E" stroke-width="1"/>
-              <circle cx="14" cy="18" r="3" fill="#10B981"/>
-              <text id="svg-llm-primary" x="24" y="21" fill="#F7F8F8" font-size="10.5" font-weight="500">Llama-3-70B (Primary)</text>
-              <text id="svg-llm-secondary" x="14" y="38" fill="#8A8F98" font-size="9.5">Claude 3.5 (Failover)</text>
+            <g transform="translate(538, 8)">
+              <rect id="svg-node-llm" width="168" height="44" rx="5" fill="#121316" stroke="#262930"/>
+              <text id="svg-llm-primary" x="12" y="18" fill="#F2F3F5" font-size="10" font-weight="500">Llama-3-70B (Primary)</text>
+              <text id="svg-llm-secondary" x="12" y="33" fill="#8A8F98" font-size="9">Claude 3.5 (Failover)</text>
             </g>
 
-            <!-- Node 5: Booking Agent + Sidecar -->
-            <g transform="translate(338, 80)">
-              <rect id="svg-node-booking" width="145" height="50" rx="6" fill="#0F1012" stroke="#2E323B" stroke-width="1"/>
-              <circle cx="14" cy="18" r="3" fill="#5E6AD2"/>
-              <text x="24" y="21" fill="#F7F8F8" font-size="11" font-weight="500">booking-agent</text>
-              <text x="14" y="38" fill="#8A8F98" font-size="9.5">Sidecar: csl-mcp-sc</text>
+            <g transform="translate(338, 66)">
+              <rect id="svg-node-booking" width="145" height="44" rx="5" fill="#121316" stroke="#2E323C"/>
+              <text x="12" y="18" fill="#F2F3F5" font-size="10.5" font-weight="500">booking-agent</text>
+              <text x="12" y="33" fill="#8A8F98" font-size="9">Sidecar: csl-mcp-sc</text>
             </g>
 
-            <!-- Node 6: MCP Servers -->
-            <g transform="translate(538, 80)">
-              <rect id="svg-node-mcp" width="168" height="50" rx="6" fill="#0F1012" stroke="#26282E" stroke-width="1"/>
-              <circle cx="14" cy="18" r="3" fill="#10B981"/>
-              <text x="24" y="21" fill="#F7F8F8" font-size="10.5" font-weight="500">flight &amp; hotel-mcp</text>
-              <text id="svg-mcp-status" x="14" y="38" fill="#8A8F98" font-size="9.5">JSON-RPC Policy &amp; HITL</text>
+            <g transform="translate(538, 66)">
+              <rect id="svg-node-mcp" width="168" height="44" rx="5" fill="#121316" stroke="#262930"/>
+              <text x="12" y="18" fill="#F2F3F5" font-size="10" font-weight="500">flight &amp; hotel-mcp</text>
+              <text id="svg-mcp-status" x="12" y="33" fill="#8A8F98" font-size="9">JSON-RPC Policy &amp; HITL</text>
             </g>
 
-            <!-- Node 7: Agentic Analytics -->
-            <g transform="translate(338, 148)">
-              <rect id="svg-node-indigo" width="145" height="48" rx="6" fill="#0F1012" stroke="#26282E" stroke-width="1"/>
-              <circle cx="14" cy="18" r="3" fill="#10B981"/>
-              <text x="24" y="21" fill="#F7F8F8" font-size="10.5" font-weight="500">csl-ag-ana</text>
-              <text id="svg-indigo-status" x="14" y="37" fill="#8A8F98" font-size="9.5">Loop Circuit: CLOSED</text>
+            <g transform="translate(338, 124)">
+              <rect id="svg-node-indigo" width="145" height="44" rx="5" fill="#121316" stroke="#262930"/>
+              <text x="12" y="18" fill="#F2F3F5" font-size="10" font-weight="500">csl-ag-ana</text>
+              <text id="svg-indigo-status" x="12" y="33" fill="#8A8F98" font-size="9">Circuit: CLOSED</text>
             </g>
 
-            <!-- Node 8: Terminating Gateway -->
-            <g transform="translate(538, 148)">
-              <rect id="svg-node-tgw" width="168" height="48" rx="6" fill="#0F1012" stroke="#26282E" stroke-width="1"/>
-              <circle cx="14" cy="18" r="3" fill="#8A8F98"/>
-              <text x="24" y="21" fill="#F7F8F8" font-size="10.5" font-weight="500">terminating-gw</text>
-              <text id="svg-tgw-status" x="14" y="37" fill="#8A8F98" font-size="9.5">Partner GDS Egress</text>
+            <g transform="translate(538, 124)">
+              <rect id="svg-node-tgw" width="168" height="44" rx="5" fill="#121316" stroke="#262930"/>
+              <text x="12" y="18" fill="#F2F3F5" font-size="10" font-weight="500">terminating-gw</text>
+              <text id="svg-tgw-status" x="12" y="33" fill="#8A8F98" font-size="9">Partner GDS Egress</text>
             </g>
           </svg>
         </div>
+      </div>
 
-        <!-- 4 Horizontal Pipeline Steps (Linear Sub-Issue Style) -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 ln-border-t text-[12px]">
-          <div id="step-1" class="px-2.5 py-1.5 rounded bg-white/[0.02] text-[#8A8F98] flex items-center space-x-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-[#5C6066]"></span>
-            <span class="truncate">1. OBO Exchange</span>
+      <!-- ================================================================= -->
+      <!-- LINEAR ISSUE GROUP 1: MESH EXECUTION PIPELINE                     -->
+      <!-- ================================================================= -->
+      <div class="ln-group-header">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-caret-down text-[10px]"></i>
+          <span>Mesh Pipeline Stages</span>
+          <span class="text-[#575B62]">4</span>
+        </div>
+        <span class="text-[11px] font-mono text-[#575B62]">Component</span>
+      </div>
+
+      <div>
+        <div id="step-1" class="ln-row">
+          <div class="flex items-center space-x-3">
+            <span id="icon-step-1" class="w-3.5 h-3.5 rounded-full border border-[#575B62] inline-block"></span>
+            <span class="font-mono text-[11.5px] text-[#575B62] w-16">CAMP-101</span>
+            <span class="text-[#F2F3F5]">Ingress API Gateway &amp; RFC 8693 OBO Token Exchange</span>
           </div>
-          <div id="step-2" class="px-2.5 py-1.5 rounded bg-white/[0.02] text-[#8A8F98] flex items-center space-x-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-[#5C6066]"></span>
-            <span class="truncate">2. Agent Delegation</span>
+          <span class="ln-tag font-mono">api-gw</span>
+        </div>
+
+        <div id="step-2" class="ln-row">
+          <div class="flex items-center space-x-3">
+            <span id="icon-step-2" class="w-3.5 h-3.5 rounded-full border border-[#575B62] inline-block"></span>
+            <span class="font-mono text-[11.5px] text-[#575B62] w-16">CAMP-102</span>
+            <span class="text-[#F2F3F5]">Orchestrator Sub-Agent Delegation &amp; Hop-by-Hop Scope Narrowing</span>
           </div>
-          <div id="step-3" class="px-2.5 py-1.5 rounded bg-white/[0.02] text-[#8A8F98] flex items-center space-x-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-[#5C6066]"></span>
-            <span class="truncate">3. MCP Sidecar</span>
+          <span class="ln-tag font-mono">ai-agent</span>
+        </div>
+
+        <div id="step-3" class="ln-row">
+          <div class="flex items-center space-x-3">
+            <span id="icon-step-3" class="w-3.5 h-3.5 rounded-full border border-[#575B62] inline-block"></span>
+            <span class="font-mono text-[11.5px] text-[#575B62] w-16">CAMP-103</span>
+            <span class="text-[#F2F3F5]">MCP Sidecar JSON-RPC 2.0 Tool Policy &amp; Partner Egress Check</span>
           </div>
-          <div id="step-4" class="px-2.5 py-1.5 rounded bg-white/[0.02] text-[#8A8F98] flex items-center space-x-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-[#5C6066]"></span>
-            <span class="truncate">4. AI Inference GW</span>
+          <span class="ln-tag font-mono">csl-mcp-sc</span>
+        </div>
+
+        <div id="step-4" class="ln-row">
+          <div class="flex items-center space-x-3">
+            <span id="icon-step-4" class="w-3.5 h-3.5 rounded-full border border-[#575B62] inline-block"></span>
+            <span class="font-mono text-[11.5px] text-[#575B62] w-16">CAMP-104</span>
+            <span class="text-[#F2F3F5]">AI Inference Gateway Routing, Protocol Translation &amp; Span Relay</span>
           </div>
+          <span class="ln-tag font-mono">csl-inf-rt</span>
         </div>
       </div>
 
-      <!-- Section B: Dynamic Proxy Interception Alert (Hidden unless triggered) -->
-      <div id="governance-alert-box" class="hidden ln-card p-4 border-l-2 border-l-rose-500 space-y-2.5">
-        <div class="flex items-center justify-between">
+      <!-- ================================================================= -->
+      <!-- LINEAR ISSUE GROUP 2: PROXY INTERCEPTIONS (When Triggered)        -->
+      <!-- ================================================================= -->
+      <div id="governance-alert-box" class="hidden">
+        <div class="ln-group-header">
+          <div class="flex items-center space-x-2 text-rose-400">
+            <i class="fa-solid fa-shield-halved text-[11px]"></i>
+            <span id="gov-alert-title">Proxy Policy Interceptions</span>
+          </div>
+          <span class="text-[11px] font-mono text-rose-400">Blocked at Sidecar</span>
+        </div>
+        <div id="gov-alert-list"></div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- LINEAR ISSUE GROUP 3: CYCLE DETECTION TELEMETRY (Act 4)           -->
+      <!-- ================================================================= -->
+      <div id="cycle-loop-box" class="hidden">
+        <div class="ln-group-header">
+          <div class="flex items-center space-x-2 text-amber-400">
+            <i class="fa-solid fa-rotate text-[11px]"></i>
+            <span>Cycle Detection Repetitions (csl-ag-ana)</span>
+          </div>
+          <span class="text-[11px] font-mono text-amber-400">Threshold: 3 Calls</span>
+        </div>
+        <div id="cycle-loop-rows"></div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- LINEAR ISSUE GROUP 4: TRAVEL ITINERARY & TOOL RESULTS             -->
+      <!-- ================================================================= -->
+      <div id="itinerary-container" class="hidden">
+        <div class="ln-group-header">
           <div class="flex items-center space-x-2">
-            <span class="w-2 h-2 rounded-full bg-rose-500"></span>
-            <span id="gov-alert-title" class="font-medium text-[#F7F8F8]">Proxy Policy Interception</span>
+            <i class="fa-solid fa-caret-down text-[10px]"></i>
+            <span>Travel Itinerary &amp; MCP Tool Deliverables</span>
           </div>
-          <span class="text-[11px] font-mono text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded">Enforced at Mesh Proxy</span>
-        </div>
-        <div id="gov-alert-list" class="space-y-1.5 text-[12px] text-[#8A8F98]"></div>
-      </div>
-
-      <!-- Section C: Dynamic Cycle Detection Loop Rows (Hidden unless Act 4) -->
-      <div id="cycle-loop-box" class="hidden ln-card p-4 border-l-2 border-l-amber-500 space-y-2.5">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center space-x-2">
-            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-            <span class="font-medium text-[#F7F8F8]">Cycle Detection Telemetry (csl-ag-ana)</span>
-          </div>
-          <span class="text-[11px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">Threshold: 3 Identical Calls</span>
-        </div>
-        <div id="cycle-loop-rows" class="space-y-1 text-[12px]"></div>
-      </div>
-
-      <!-- Section D: Generated Itinerary & Proposal List (Linear Issue List Style) -->
-      <div id="itinerary-container" class="hidden ln-card overflow-hidden">
-        <div class="px-4 py-3 ln-border-b flex items-center justify-between">
-          <span class="font-medium text-[#F7F8F8]">Orchestrated Trip Proposal</span>
-          <span id="trip-budget-badge" class="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">Policy Compliant</span>
+          <span id="trip-budget-badge" class="ln-tag text-emerald-400">Within Policy</span>
         </div>
 
-        <div class="p-4 ln-border-b bg-white/[0.01]">
-          <p id="synthesis-text" class="text-[12.5px] text-[#8A8F98] leading-relaxed"></p>
+        <!-- Synthesis Summary Row -->
+        <div class="px-5 py-3 ln-border-b bg-white/[0.01] text-[12.5px] text-[#8A8F98] leading-relaxed" id="synthesis-text"></div>
+
+        <!-- Deliverable Issue Rows -->
+        <div class="ln-row">
+          <div class="flex items-center space-x-3">
+            <i class="fa-solid fa-plane text-[11px] text-[#8A8F98] w-3.5 text-center"></i>
+            <span class="font-mono text-[11.5px] text-[#575B62] w-16">MCP-FLT</span>
+            <span id="flight-val" class="text-[#F2F3F5] font-medium">--</span>
+          </div>
+          <span id="flight-price" class="ln-tag font-mono">--</span>
         </div>
 
-        <!-- Linear Issue-Style Rows for Flight, Hotel, Partner GDS, Weather -->
-        <div class="divide-y divide-white/[0.06] text-[12.5px]">
-          <div class="px-4 py-2.5 flex items-center justify-between hover:bg-white/[0.02]">
-            <div class="flex items-center space-x-3">
-              <span class="font-mono text-[11px] text-[#5C6066] w-16">FLIGHT</span>
-              <span id="flight-val" class="text-[#F7F8F8] font-medium">--</span>
-            </div>
-            <span id="flight-price" class="font-mono text-[12px] text-[#8A8F98]">--</span>
+        <div class="ln-row">
+          <div class="flex items-center space-x-3">
+            <i class="fa-solid fa-hotel text-[11px] text-[#8A8F98] w-3.5 text-center"></i>
+            <span class="font-mono text-[11.5px] text-[#575B62] w-16">MCP-HTL</span>
+            <span id="hotel-val" class="text-[#F2F3F5] font-medium">--</span>
           </div>
+          <span id="hotel-price" class="ln-tag font-mono">--</span>
+        </div>
 
-          <div class="px-4 py-2.5 flex items-center justify-between hover:bg-white/[0.02]">
-            <div class="flex items-center space-x-3">
-              <span class="font-mono text-[11px] text-[#5C6066] w-16">HOTEL</span>
-              <span id="hotel-val" class="text-[#F7F8F8] font-medium">--</span>
-            </div>
-            <span id="hotel-price" class="font-mono text-[12px] text-[#8A8F98]">--</span>
+        <div class="ln-row">
+          <div class="flex items-center space-x-3">
+            <i class="fa-solid fa-car text-[11px] text-[#8A8F98] w-3.5 text-center"></i>
+            <span class="font-mono text-[11.5px] text-[#575B62] w-16">EXT-GDS</span>
+            <span id="car-val" class="text-[#F2F3F5] font-medium">--</span>
           </div>
+          <span id="car-price" class="ln-tag font-mono">--</span>
+        </div>
 
-          <div class="px-4 py-2.5 flex items-center justify-between hover:bg-white/[0.02]">
-            <div class="flex items-center space-x-3">
-              <span class="font-mono text-[11px] text-[#5C6066] w-16">PARTNER</span>
-              <span id="car-val" class="text-[#F7F8F8] font-medium">--</span>
-            </div>
-            <span id="car-price" class="font-mono text-[12px] text-[#8A8F98]">--</span>
+        <div class="ln-row">
+          <div class="flex items-center space-x-3">
+            <i class="fa-solid fa-cloud-sun text-[11px] text-[#8A8F98] w-3.5 text-center"></i>
+            <span class="font-mono text-[11.5px] text-[#575B62] w-16">MCP-WTH</span>
+            <span id="weather-val" class="text-[#8A8F98]">--</span>
           </div>
-
-          <div class="px-4 py-2.5 flex items-center justify-between hover:bg-white/[0.02]">
-            <div class="flex items-center space-x-3">
-              <span class="font-mono text-[11px] text-[#5C6066] w-16">CLIMATE</span>
-              <span id="weather-val" class="text-[#8A8F98]">--</span>
-            </div>
-            <span id="packing-val" class="text-[11px] text-[#5C6066] truncate max-w-[220px]">--</span>
-          </div>
+          <span id="packing-val" class="text-[11.5px] text-[#575B62] truncate max-w-[240px]">--</span>
         </div>
       </div>
 
     </div>
-  </div>
+  </main>
 
   <!-- ===================================================================== -->
-  <!-- 3. RIGHT INSPECTOR PANEL (Linear Properties Sidebar)                  -->
+  <!-- RIGHT SIDEBAR (Linear 310px Issue Properties & Inspector)             -->
   <!-- ===================================================================== -->
-  <aside class="w-full lg:w-80 bg-[#08090A] ln-border-l flex flex-col h-full overflow-y-auto shrink-0">
+  <aside class="w-[310px] bg-[#090A0B] ln-border-l flex flex-col h-full overflow-y-auto shrink-0">
 
-    <!-- Property Group 1: Traveler Workspace Parameters -->
-    <div class="p-4 ln-border-b space-y-3">
-      <div class="flex items-center justify-between">
-        <span class="text-[11px] font-medium text-[#5C6066] uppercase tracking-wider">Traveler Workspace</span>
-        <div class="flex items-center space-x-1">
-          <button type="button" onclick="setScenario('sf')" class="text-[11px] text-[#8A8F98] hover:text-white px-1.5 py-0.5 rounded bg-white/[0.04]">SFO</button>
-          <button type="button" onclick="setScenario('london')" class="text-[11px] text-[#8A8F98] hover:text-white px-1.5 py-0.5 rounded bg-white/[0.04]">LHR</button>
-          <button type="button" onclick="setScenario('tokyo')" class="text-[11px] text-[#8A8F98] hover:text-white px-1.5 py-0.5 rounded bg-white/[0.04]">HND</button>
+    <!-- Top Right Header -->
+    <div class="h-11 px-4 ln-border-b flex items-center justify-between shrink-0">
+      <span class="text-[12px] font-medium text-[#8A8F98]">Properties · Traveler Workspace</span>
+      <div class="flex items-center space-x-1">
+        <button type="button" onclick="setScenario('sf')" class="ln-tag hover:text-white">SFO</button>
+        <button type="button" onclick="setScenario('london')" class="ln-tag hover:text-white">LHR</button>
+        <button type="button" onclick="setScenario('tokyo')" class="ln-tag hover:text-white">HND</button>
+      </div>
+    </div>
+
+    <!-- Section 1: Delegated Identity & Trip Properties -->
+    <div class="p-4 ln-border-b space-y-2">
+      <div class="flex items-center justify-between py-0.5">
+        <span class="text-[#8A8F98] text-[12px]">Persona</span>
+        <select id="persona-select" onchange="handlePersonaChange()" class="bg-[#121316] border border-white/[0.08] rounded px-2 py-1 text-[12px] text-[#F2F3F5] focus:outline-none">
+          <option value="traveler-101">Alex Mercer (VP Eng)</option>
+          <option value="contractor-202">Sam Taylor (Contractor)</option>
+        </select>
+      </div>
+
+      <div class="flex items-center justify-between py-0.5">
+        <span class="text-[#8A8F98] text-[12px]">Authority</span>
+        <span id="obo-role-badge" class="text-[12px] text-[#F2F3F5]">VP Engineering</span>
+      </div>
+
+      <div class="py-1">
+        <div id="obo-scopes-list" class="flex flex-wrap gap-1 justify-end">
+          <span class="ln-tag font-mono">travel:read</span>
+          <span class="ln-tag font-mono">travel:plan</span>
+          <span class="ln-tag font-mono">booking:reserve</span>
+          <span class="ln-tag font-mono">partner:gds_egress</span>
+        </div>
+        <div id="obo-chain-box" class="text-[11px] text-[#575B62] text-right mt-1">
+          RFC 8693 OBO Hop-by-Hop Narrowing
         </div>
       </div>
 
-      <form id="trip-form" onsubmit="handleTripSubmit(event)" class="space-y-1.5">
+      <form id="trip-form" onsubmit="handleTripSubmit(event)" class="space-y-1.5 pt-2 ln-border-t">
         <input id="inp-scenario-mode" type="hidden" value="normal">
 
-        <div class="flex items-center justify-between py-0.5">
+        <div class="flex items-center justify-between">
           <label class="text-[#8A8F98] text-[12px]">Traveler</label>
-          <input id="inp-traveler" type="text" value="Alex Mercer" required class="ln-input w-40">
+          <input id="inp-traveler" type="text" value="Alex Mercer" required class="ln-prop-input">
         </div>
-
-        <div class="flex items-center justify-between py-0.5">
+        <div class="flex items-center justify-between">
           <label class="text-[#8A8F98] text-[12px]">Origin</label>
-          <input id="inp-origin" type="text" value="JFK" required class="ln-input w-40 font-mono">
+          <input id="inp-origin" type="text" value="JFK" required class="ln-prop-input font-mono">
         </div>
-
-        <div class="flex items-center justify-between py-0.5">
+        <div class="flex items-center justify-between">
           <label class="text-[#8A8F98] text-[12px]">Destination</label>
-          <input id="inp-destination" type="text" value="San Francisco" required class="ln-input w-40">
+          <input id="inp-destination" type="text" value="San Francisco" required class="ln-prop-input">
         </div>
-
-        <div class="flex items-center justify-between py-0.5">
-          <label class="text-[#8A8F98] text-[12px]">Duration (Days)</label>
-          <input id="inp-duration" type="number" value="4" min="1" max="14" required class="ln-input w-24 font-mono">
+        <div class="flex items-center justify-between">
+          <label class="text-[#8A8F98] text-[12px]">Duration (d)</label>
+          <input id="inp-duration" type="number" value="4" min="1" max="14" required class="ln-prop-input font-mono">
         </div>
-
-        <div class="flex items-center justify-between py-0.5">
-          <label class="text-[#8A8F98] text-[12px]">Budget (USD)</label>
-          <input id="inp-budget" type="number" value="2500" min="500" max="10000" required class="ln-input w-28 font-mono">
+        <div class="flex items-center justify-between">
+          <label class="text-[#8A8F98] text-[12px]">Budget ($)</label>
+          <input id="inp-budget" type="number" value="2500" min="500" max="10000" required class="ln-prop-input font-mono">
         </div>
-
-        <div class="flex items-center justify-between py-0.5">
+        <div class="flex items-center justify-between">
           <label class="text-[#8A8F98] text-[12px]">Purpose</label>
-          <input id="inp-purpose" type="text" value="Annual HashiCorp & AI Architecture Summit" required class="ln-input w-44 truncate">
+          <input id="inp-purpose" type="text" value="Annual HashiCorp & AI Architecture Summit" required class="ln-prop-input truncate">
         </div>
 
         <div class="pt-2">
-          <button id="btn-submit" type="submit" class="ln-btn-primary w-full py-2 flex items-center justify-center space-x-2">
+          <button id="btn-submit" type="submit" class="ln-btn w-full justify-center">
             <span>Orchestrate via Mesh</span>
           </button>
         </div>
       </form>
     </div>
 
-    <!-- Property Group 2: Human-in-the-Loop Gate (csl-mcp-sc) -->
-    <div class="p-4 ln-border-b space-y-3">
+    <!-- Section 2: HITL Approval Gate -->
+    <div class="p-4 ln-border-b space-y-2.5">
       <div class="flex items-center justify-between">
-        <span class="text-[11px] font-medium text-[#5C6066] uppercase tracking-wider">HITL Approval Gate</span>
-        <span class="text-[10px] font-mono text-[#8A8F98]">csl-mcp-sc</span>
+        <span class="text-[11px] font-medium text-[#575B62] uppercase tracking-wider">HITL Gate</span>
+        <span class="ln-tag font-mono">csl-mcp-sc</span>
       </div>
 
-      <div id="hitl-empty" class="text-[12px] text-[#5C6066] leading-relaxed">
-        Bookings are held by the sidecar proxy until signed approval evidence is provided.
+      <div id="hitl-empty" class="text-[12px] text-[#575B62]">
+        Awaiting trip proposal to request human approval signature.
       </div>
 
-      <div id="hitl-controls" class="hidden space-y-3">
-        <div class="flex items-center justify-between text-[12px] py-1">
-          <span class="text-[#8A8F98]">Pending Spend</span>
-          <span id="hitl-cost" class="font-mono font-medium text-[#F7F8F8]">$0.00</span>
+      <div id="hitl-controls" class="hidden space-y-2.5">
+        <div class="flex items-center justify-between text-[12px]">
+          <span class="text-[#8A8F98]">Estimated Spend</span>
+          <span id="hitl-cost" class="font-mono font-medium text-[#F2F3F5]">$0.00</span>
         </div>
-
         <div class="grid grid-cols-2 gap-2">
-          <button onclick="submitReviewAction('APPROVE')" class="ln-btn-primary py-1.5">
+          <button onclick="submitReviewAction('APPROVE')" class="ln-btn justify-center">
             Approve &amp; Sign
           </button>
-          <button onclick="submitReviewAction('REJECT')" class="ln-btn-secondary py-1.5">
+          <button onclick="submitReviewAction('REJECT')" class="ln-btn-ghost justify-center">
             Reject
           </button>
         </div>
       </div>
 
-      <div id="confirmation-box" class="hidden p-3 rounded-md bg-white/[0.03] border border-white/[0.08] space-y-1.5 text-[12px]">
-        <div id="confirmation-title" class="font-medium text-[#F7F8F8]">Confirmed</div>
-        <div id="confirmation-details" class="text-[11.5px] text-[#8A8F98] space-y-1"></div>
+      <div id="confirmation-box" class="hidden p-2.5 rounded bg-white/[0.03] border border-white/[0.07] space-y-1 text-[12px]">
+        <div id="confirmation-title" class="font-medium text-[#F2F3F5]">Confirmed</div>
+        <div id="confirmation-details" class="text-[11px] text-[#8A8F98] space-y-0.5"></div>
       </div>
     </div>
 
-    <!-- Property Group 3: AI Inference Gateway Telemetry -->
-    <div class="p-4 ln-border-b space-y-2.5">
+    <!-- Section 3: AI Gateway Telemetry -->
+    <div class="p-4 ln-border-b space-y-2">
       <div class="flex items-center justify-between">
-        <span class="text-[11px] font-medium text-[#5C6066] uppercase tracking-wider">AI Gateway Telemetry</span>
-        <span id="tel-failover-badge" class="hidden text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">Failover</span>
+        <span class="text-[11px] font-medium text-[#575B62] uppercase tracking-wider">AI Inference GW</span>
+        <span id="tel-failover-badge" class="hidden ln-tag text-amber-400">Failover</span>
       </div>
 
-      <div id="telemetry-empty" class="text-[12px] text-[#5C6066]">
-        No inference spans recorded yet.
+      <div id="telemetry-empty" class="text-[12px] text-[#575B62]">
+        No inference spans captured yet.
       </div>
 
-      <div id="telemetry-card" class="hidden space-y-2 text-[12px]">
+      <div id="telemetry-card" class="hidden space-y-1.5 text-[12px]">
         <div class="flex items-center justify-between">
           <span class="text-[#8A8F98]">Model</span>
-          <span id="tel-model" class="font-mono text-[11.5px] text-[#F7F8F8] truncate max-w-[165px]">meta-llama/llama-3-70b-instruct</span>
+          <span id="tel-model" class="font-mono text-[11px] text-[#F2F3F5] truncate max-w-[165px]">meta-llama/llama-3-70b-instruct</span>
         </div>
         <div class="flex items-center justify-between">
-          <span class="text-[#8A8F98]">Protocol</span>
+          <span class="text-[#8A8F98]">Route</span>
           <span id="tel-translation" class="font-mono text-[11px] text-[#8A8F98] truncate max-w-[165px]">OpenAI /v1/chat</span>
         </div>
         <div class="flex items-center justify-between">
           <span class="text-[#8A8F98]">Tokens</span>
-          <span class="font-mono text-[11.5px] text-[#F7F8F8]">
+          <span class="font-mono text-[11px] text-[#F2F3F5]">
             <span id="tel-prompt-tokens">0</span> &rarr; <span id="tel-comp-tokens">0</span> (<span id="tel-total-tokens">0</span>)
           </span>
         </div>
         <div class="flex items-center justify-between">
-          <span class="text-[#8A8F98]">Est. Cost</span>
-          <span id="tel-cost" class="font-mono text-[11.5px] text-[#8A8F98]">$0.000</span>
+          <span class="text-[#8A8F98]">Cost</span>
+          <span id="tel-cost" class="font-mono text-[11px] text-[#8A8F98]">$0.000</span>
         </div>
         <div class="flex items-center justify-between">
-          <span class="text-[#8A8F98]">Vault Secret</span>
-          <span id="tel-vault-ref" class="font-mono text-[11px] text-[#5C6066] truncate max-w-[155px]">vault:secret/data/ai/llm</span>
+          <span class="text-[#8A8F98]">Secret</span>
+          <span id="tel-vault-ref" class="font-mono text-[10.5px] text-[#575B62] truncate max-w-[160px]">vault:secret/data/ai/llm</span>
         </div>
       </div>
     </div>
 
-    <!-- Property Group 4: Live Mesh Event Stream -->
+    <!-- Section 4: Activity Feed -->
     <div class="p-4 flex-1 flex flex-col space-y-2">
       <div class="flex items-center justify-between">
-        <span class="text-[11px] font-medium text-[#5C6066] uppercase tracking-wider">Activity Stream</span>
-        <span class="text-[10px] font-mono text-[#5C6066]">csl-nod-rly</span>
+        <span class="text-[11px] font-medium text-[#575B62] uppercase tracking-wider">Activity</span>
+        <span class="text-[10px] font-mono text-[#575B62]">csl-nod-rly</span>
       </div>
-      <div id="audit-feed" class="flex-1 text-[11.5px] font-mono text-[#8A8F98] space-y-1.5 overflow-y-auto max-h-40">
-        <div class="text-[#5C6066]">Listening for mesh events...</div>
+      <div id="audit-feed" class="text-[11px] font-mono text-[#8A8F98] space-y-1.5 overflow-y-auto max-h-36">
+        <div class="text-[#575B62]">No activity yet.</div>
       </div>
     </div>
 
   </aside>
 
   <!-- ===================================================================== -->
-  <!-- ACT 5 MODAL: LINEAR COMMAND-STYLE CRD & SPAN INSPECTOR                -->
+  <!-- ACT 5 MODAL: LINEAR COMMAND PALETTE STYLE CRD & SPAN INSPECTOR        -->
   <!-- ===================================================================== -->
   <div id="inspector-modal" class="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 hidden flex items-center justify-center p-6">
-    <div class="bg-[#141518] border border-white/[0.1] rounded-xl max-w-3xl w-full max-h-[82vh] flex flex-col shadow-2xl overflow-hidden">
-      <div class="px-5 py-3.5 ln-border-b flex items-center justify-between">
-        <span class="font-medium text-[#F7F8F8]">Consul 2.1 CRDs &amp; Zero-Code OpenTelemetry Spans</span>
-        <button onclick="closeInspectorModal()" class="ln-btn-secondary px-2.5 py-1 text-[11px]">ESC</button>
+    <div class="bg-[#121316] border border-white/[0.1] rounded-lg max-w-3xl w-full max-h-[82vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="h-11 px-5 ln-border-b flex items-center justify-between">
+        <span class="font-medium text-[#F2F3F5]">Consul 2.1 CRDs &amp; Zero-Code OpenTelemetry Spans</span>
+        <button onclick="closeInspectorModal()" class="ln-btn-ghost h-6 px-2 text-[11px]">ESC</button>
       </div>
       <div class="p-5 overflow-y-auto space-y-4 text-[12px]">
         <div>
           <div class="text-[#8A8F98] mb-1.5 font-medium">1. Declarative ServiceDefaults &amp; Feature Gate</div>
-          <pre class="bg-[#08090A] border border-white/[0.06] p-3.5 rounded-lg text-[11.5px] font-mono text-[#D0D6E0] overflow-x-auto">$ consul operator feature set -token="$CONSUL_TOKEN" consul-ai enabled
+          <pre class="bg-[#090A0B] border border-white/[0.06] p-3.5 rounded text-[11.5px] font-mono text-[#D0D6E0] overflow-x-auto">$ consul operator feature set -token="$CONSUL_TOKEN" consul-ai enabled
 
 apiVersion: consul.hashicorp.com/v1alpha1
 kind: ServiceDefaults
@@ -663,7 +720,7 @@ spec:
         </div>
         <div>
           <div class="text-[#8A8F98] mb-1.5 font-medium">2. Live OpenTelemetry Spans (csl-nod-rly)</div>
-          <pre id="modal-live-spans" class="bg-[#08090A] border border-white/[0.06] p-3.5 rounded-lg text-[11.5px] font-mono text-[#D0D6E0] overflow-x-auto max-h-60">Loading live spans...</pre>
+          <pre id="modal-live-spans" class="bg-[#090A0B] border border-white/[0.06] p-3.5 rounded text-[11.5px] font-mono text-[#D0D6E0] overflow-x-auto max-h-60">Loading live spans...</pre>
         </div>
       </div>
     </div>
@@ -675,6 +732,11 @@ spec:
   <script>
     let activeTripId = null;
 
+    function toggleTopologyPanel() {
+      const drawer = document.getElementById('topology-drawer');
+      drawer.classList.toggle('hidden');
+    }
+
     function handlePersonaChange() {
       const sel = document.getElementById('persona-select').value;
       const nameInput = document.getElementById('inp-traveler');
@@ -685,19 +747,19 @@ spec:
         nameInput.value = 'Sam Taylor';
         roleBadge.innerText = 'Contractor';
         scopesList.innerHTML = `
-          <span class="text-[10px] font-mono bg-white/[0.04] text-[#8A8F98] px-1.5 py-0.5 rounded">travel:read</span>
-          <span class="text-[10px] font-mono bg-white/[0.04] text-[#8A8F98] px-1.5 py-0.5 rounded">travel:plan</span>
-          <span class="text-[10px] font-mono bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded line-through">booking:reserve</span>
-          <span class="text-[10px] font-mono bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded line-through">partner:gds_egress</span>
+          <span class="ln-tag font-mono">travel:read</span>
+          <span class="ln-tag font-mono">travel:plan</span>
+          <span class="ln-tag font-mono text-rose-400 line-through">booking:reserve</span>
+          <span class="ln-tag font-mono text-rose-400 line-through">partner:gds_egress</span>
         `;
       } else {
         nameInput.value = 'Alex Mercer';
         roleBadge.innerText = 'VP Engineering';
         scopesList.innerHTML = `
-          <span class="text-[10px] font-mono bg-white/[0.04] text-[#8A8F98] px-1.5 py-0.5 rounded">travel:read</span>
-          <span class="text-[10px] font-mono bg-white/[0.04] text-[#8A8F98] px-1.5 py-0.5 rounded">travel:plan</span>
-          <span class="text-[10px] font-mono bg-white/[0.04] text-[#8A8F98] px-1.5 py-0.5 rounded">booking:reserve</span>
-          <span class="text-[10px] font-mono bg-white/[0.04] text-[#8A8F98] px-1.5 py-0.5 rounded">partner:gds_egress</span>
+          <span class="ln-tag font-mono">travel:read</span>
+          <span class="ln-tag font-mono">travel:plan</span>
+          <span class="ln-tag font-mono">booking:reserve</span>
+          <span class="ln-tag font-mono">partner:gds_egress</span>
         `;
       }
     }
@@ -776,12 +838,12 @@ spec:
       btn.disabled = true;
       btn.innerHTML = '<span>Running...</span>';
       statusPill.innerText = "Running";
-      statusPill.className = "ml-2 text-[11px] font-mono px-2 py-0.5 rounded bg-[#5E6AD2]/20 text-[#8E98F5]";
+      statusPill.className = "ln-tag text-[#8E98F5] border-[#5E6AD2]/40";
 
       highlightStep('step-1');
-      setTimeout(() => highlightStep('step-2'), 180);
-      setTimeout(() => highlightStep('step-3'), 360);
-      setTimeout(() => highlightStep('step-4'), 540);
+      setTimeout(() => highlightStep('step-2'), 160);
+      setTimeout(() => highlightStep('step-3'), 320);
+      setTimeout(() => highlightStep('step-4'), 480);
 
       const payload = {
         user_id: document.getElementById('persona-select').value,
@@ -809,20 +871,20 @@ spec:
       } finally {
         btn.disabled = false;
         btn.innerHTML = '<span>Orchestrate via Mesh</span>';
-        statusPill.innerText = "Complete";
-        statusPill.className = "ml-2 text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400";
+        statusPill.innerText = "Completed";
+        statusPill.className = "ln-tag text-emerald-400";
         document.getElementById('inp-scenario-mode').value = 'normal';
       }
     }
 
     function highlightStep(stepId) {
       ['step-1', 'step-2', 'step-3', 'step-4'].forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
+        const icon = document.getElementById(`icon-${id}`);
+        if (!icon) return;
         if (id === stepId) {
-          el.className = "px-2.5 py-1.5 rounded bg-[#5E6AD2]/15 text-[#F7F8F8] font-medium flex items-center space-x-2 transition";
+          icon.className = "w-3.5 h-3.5 rounded-full bg-[#5E6AD2] inline-block";
         } else {
-          el.className = "px-2.5 py-1.5 rounded bg-white/[0.02] text-[#8A8F98] flex items-center space-x-2 transition";
+          icon.className = "w-3.5 h-3.5 rounded-full border border-emerald-400 bg-emerald-400/20 inline-block";
         }
       });
     }
@@ -837,16 +899,16 @@ spec:
       const tgwRect = document.getElementById('svg-node-tgw');
       const tgwStatus = document.getElementById('svg-tgw-status');
 
-      llmRect.setAttribute('stroke', '#26282E');
+      llmRect.setAttribute('stroke', '#262930');
       llmP1.textContent = 'Llama-3-70B (200 OK)';
       llmP2.textContent = 'Claude 3.5 (Standby)';
       llmP2.setAttribute('fill', '#8A8F98');
 
-      mcpRect.setAttribute('stroke', '#26282E');
+      mcpRect.setAttribute('stroke', '#262930');
       mcpStatus.textContent = 'JSON-RPC Policy & HITL';
       mcpStatus.setAttribute('fill', '#8A8F98');
 
-      tgwRect.setAttribute('stroke', '#26282E');
+      tgwRect.setAttribute('stroke', '#262930');
       tgwStatus.textContent = 'Partner GDS Egress';
       tgwStatus.setAttribute('fill', '#8A8F98');
 
@@ -879,32 +941,40 @@ spec:
 
       updateTopology(data, scenarioMode);
 
-      // Interceptions
+      // Interceptions rendered as Linear Issue Rows
       const interceptions = data.governance_interceptions || [];
       const govBox = document.getElementById('governance-alert-box');
       const govList = document.getElementById('gov-alert-list');
       if (interceptions.length > 0) {
         govBox.classList.remove('hidden');
-        govList.innerHTML = interceptions.map(item => `
-          <div class="py-1">
-            <span class="text-[#F7F8F8] font-medium">[${item.status}] ${item.layer}:</span>
-            <span class="text-[#8A8F98]"> ${item.message}</span>
+        govList.innerHTML = interceptions.map((item, idx) => `
+          <div class="ln-row">
+            <div class="flex items-center space-x-3">
+              <span class="w-2 h-2 rounded-full bg-rose-500 shrink-0"></span>
+              <span class="font-mono text-[11px] text-rose-400 w-16">INT-${idx + 1}</span>
+              <span class="text-[#F2F3F5]">${item.message}</span>
+            </div>
+            <span class="ln-tag font-mono text-rose-400 shrink-0">${item.status}</span>
           </div>
         `).join('');
       } else {
         govBox.classList.add('hidden');
       }
 
-      // Cycle detection rows
+      // Cycle detection rows rendered as Linear Issue Rows
       const loops = data.loop_iterations || [];
       const loopBox = document.getElementById('cycle-loop-box');
       const loopRows = document.getElementById('cycle-loop-rows');
       if (loops.length > 0) {
         loopBox.classList.remove('hidden');
         loopRows.innerHTML = loops.map(lp => `
-          <div class="flex items-center justify-between py-1 ln-border-b last:border-none">
-            <span class="text-[#8A8F98]">Attempt #${lp.attempt} · <code class="text-[#F7F8F8]">${lp.tool}</code></span>
-            <span class="${lp.circuit_state === 'OPEN' ? 'text-rose-400 font-medium' : 'text-amber-400'} font-mono text-[11px]">
+          <div class="ln-row">
+            <div class="flex items-center space-x-3">
+              <span class="w-2 h-2 rounded-full ${lp.circuit_state === 'OPEN' ? 'bg-rose-500' : 'bg-amber-400'}"></span>
+              <span class="font-mono text-[11px] text-[#575B62] w-16">LOOP-${lp.attempt}</span>
+              <span class="text-[#F2F3F5] font-mono text-[12px]">${lp.tool}</span>
+            </div>
+            <span class="ln-tag font-mono ${lp.circuit_state === 'OPEN' ? 'text-rose-400' : 'text-amber-400'}">
               ${lp.outcome} · ${lp.circuit_state}
             </span>
           </div>
@@ -913,11 +983,9 @@ spec:
         loopBox.classList.add('hidden');
       }
 
-      // OBO Chain
       if (data.obo_delegation_chain && data.obo_delegation_chain.length > 0) {
         document.getElementById('obo-chain-box').innerHTML = `
-          <div>Subject: <span class="text-[#F7F8F8]">${data.obo_user}</span></div>
-          <div>Weather hop narrowed to <code class="text-[#8A8F98]">travel:read</code></div>
+          Subject: <span class="text-[#F2F3F5]">${data.obo_user}</span> · Narrowed per hop
         `;
       }
 
@@ -934,7 +1002,7 @@ spec:
       document.getElementById('hotel-price').innerText = `$${ht.price_per_night || 0}/night`;
 
       if (gt.status === 'blocked_by_obo_policy') {
-        document.getElementById('car-val').innerText = 'Denied by Terminating GW';
+        document.getElementById('car-val').innerText = 'Denied by Terminating Gateway';
         document.getElementById('car-price').innerText = '403 Missing Scope';
       } else {
         document.getElementById('car-val').innerText = gt.vehicle || 'Executive Sedan';
@@ -991,7 +1059,7 @@ spec:
           const fl = det.flight_booking || {};
           const ht = det.hotel_booking || {};
           document.getElementById('confirmation-details').innerHTML = `
-            <div>Sig: <code class="text-[#F7F8F8]">${det.hitl_evidence_token || 'verified'}</code></div>
+            <div>Sig: <code class="text-[#F2F3F5]">${det.hitl_evidence_token || 'verified'}</code></div>
             <div>Flight: ${fl.pnr || 'Confirmed'} · Hotel: ${ht.booking_reference || 'Confirmed'}</div>
           `;
         }
@@ -1024,23 +1092,23 @@ spec:
         const svgIndigoStatus = document.getElementById('svg-indigo-status');
 
         if (bookingCircuit.state === 'OPEN' || indigo.compliance_status === 'CIRCUIT_OPEN_HALTED') {
-          dot.className = "w-2 h-2 rounded-full bg-rose-500 animate-ping";
+          dot.className = "w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping";
           label.innerText = "OPEN";
           label.className = "text-rose-400 font-medium";
           resetBtn.classList.remove('hidden');
           if (svgIndigoRect) svgIndigoRect.setAttribute('stroke', '#F43F5E');
           if (svgIndigoStatus) {
-            svgIndigoStatus.textContent = "Loop Circuit: OPEN";
+            svgIndigoStatus.textContent = "Circuit: OPEN";
             svgIndigoStatus.setAttribute('fill', '#FB7185');
           }
         } else {
-          dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+          dot.className = "w-1.5 h-1.5 rounded-full bg-emerald-400";
           label.innerText = "CLOSED";
-          label.className = "text-[#F7F8F8] font-medium";
+          label.className = "text-[#F2F3F5] font-medium";
           resetBtn.classList.add('hidden');
-          if (svgIndigoRect) svgIndigoRect.setAttribute('stroke', '#26282E');
+          if (svgIndigoRect) svgIndigoRect.setAttribute('stroke', '#262930');
           if (svgIndigoStatus) {
-            svgIndigoStatus.textContent = "Loop Circuit: CLOSED";
+            svgIndigoStatus.textContent = "Circuit: CLOSED";
             svgIndigoStatus.setAttribute('fill', '#8A8F98');
           }
         }
@@ -1060,8 +1128,8 @@ spec:
         if (data.audit_events && data.audit_events.length > 0) {
           feed.innerHTML = data.audit_events.map(ev => `
             <div class="truncate">
-              <span class="text-[#5C6066]">${ev.timestamp.split(' ')[1] || ev.timestamp}</span>
-              <span class="text-[#F7F8F8]"> ${ev.event}</span>
+              <span class="text-[#575B62]">${ev.timestamp.split(' ')[1] || ev.timestamp}</span>
+              <span class="text-[#F2F3F5]"> ${ev.event}</span>
             </div>
           `).join('');
         }
@@ -1077,7 +1145,6 @@ spec:
       document.getElementById('inspector-modal').classList.add('hidden');
     }
 
-    // Keyboard shortcuts 1-5 like Linear
     document.addEventListener('keydown', (e) => {
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
       if (e.key === '1') triggerActScenario('normal');
@@ -1085,6 +1152,7 @@ spec:
       if (e.key === '3') triggerActScenario('act2_unauthorized_tool');
       if (e.key === '4') triggerActScenario('act3_contractor_obo');
       if (e.key === '5') triggerActScenario('act4_cycle_loop');
+      if (e.key === 'm' || e.key === 'M') toggleTopologyPanel();
       if (e.key === 'Escape') closeInspectorModal();
     });
 
