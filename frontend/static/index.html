@@ -1,464 +1,984 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Consul Agentic Runtime Fabric (2.1) — Interactive Governance Showcase</title>
+  <title>Consul Agentic Runtime Fabric (2.1) — Architecture & Governance Evaluation Console</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>
-    @keyframes pulseGlow {
-      0%, 100% { box-shadow: 0 0 15px rgba(220, 38, 38, 0.4); }
-      50% { box-shadow: 0 0 25px rgba(239, 68, 68, 0.8); }
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+          colors: {
+            hds: {
+              canvas: '#0B0C10',
+              nav: '#0E1015',
+              surface: '#12151E',
+              elevated: '#171B26',
+              code: '#08090D',
+              border: '#222736',
+              borderLight: '#2E3548',
+              consul: '#CA2171',
+              consulHover: '#E02B80',
+              consulSurface: 'rgba(202, 33, 113, 0.12)',
+              consulBorder: 'rgba(202, 33, 113, 0.45)',
+              vault: '#FFD814',
+              nomad: '#00CA8E',
+              boundary: '#EC585D',
+            }
+          }
+        }
+      }
     }
-    .pulse-agent { animation: pulseGlow 2s infinite; }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    body {
+      background-color: #0B0C10;
+      color: #E2E8F0;
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+    /* HashiCorp Helios subtle engineering grid background */
+    .hds-grid-bg {
+      background-image:
+        linear-gradient(to right, rgba(34, 39, 54, 0.28) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(34, 39, 54, 0.28) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    /* Crisp HDS Card styling */
+    .hds-card {
+      background-color: #12151E;
+      border: 1px solid #222736;
+      border-radius: 6px;
+      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.55);
+    }
+    .hds-card-header {
+      background-color: rgba(23, 27, 38, 0.65);
+      border-bottom: 1px solid #222736;
+      padding: 10px 16px;
+    }
+    .hds-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+    }
+    .hds-input {
+      background-color: #08090D;
+      border: 1px solid #262C3D;
+      border-radius: 5px;
+      color: #F1F5F9;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .hds-input:focus {
+      outline: none;
+      border-color: #CA2171;
+      box-shadow: 0 0 0 2px rgba(202, 33, 113, 0.25);
+    }
+    .hds-act-card {
+      position: relative;
+      background-color: #12151E;
+      border: 1px solid #222736;
+      border-radius: 6px;
+      transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .hds-act-card:hover {
+      background-color: #171B26;
+      border-color: #384158;
+      transform: translateY(-1px);
+    }
+    .hds-act-card.active-act {
+      border-color: #CA2171;
+      background: linear-gradient(180deg, rgba(202, 33, 113, 0.12) 0%, rgba(18, 21, 30, 0.95) 100%);
+      box-shadow: 0 0 0 1px rgba(202, 33, 113, 0.35), 0 8px 20px -4px rgba(202, 33, 113, 0.2);
+    }
+    /* Custom scrollbars for code & span telemetry */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #08090D;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #262C3D;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3B445E;
+    }
+    @keyframes flowDash {
+      to {
+        stroke-dashoffset: -20;
+      }
+    }
+    .mesh-edge-active {
+      stroke-dasharray: 5 5;
+      animation: flowDash 0.8s linear infinite;
+    }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased">
+<body class="min-h-screen flex flex-col font-sans antialiased selection:bg-[#CA2171] selection:text-white hds-grid-bg">
 
-  <!-- Navigation / Header -->
-  <header class="border-b border-slate-800 bg-slate-900/95 backdrop-blur px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50">
-    <div class="flex items-center space-x-3">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-red-600 to-rose-400 flex items-center justify-center font-bold text-xl shadow-lg shadow-red-900/40">
-        <i class="fa-solid fa-Microchip text-white fa-cubes"></i>
+  <!-- ===================================================================== -->
+  <!-- TOP GLOBAL HCP / CONSUL ENTERPRISE NAVIGATION BAR                     -->
+  <!-- ===================================================================== -->
+  <header class="bg-[#0D0F14]/95 backdrop-blur-md border-b border-[#222736] sticky top-0 z-50">
+    <!-- Top Thin HCP Context Strip -->
+    <div class="border-b border-[#1A1E2B] bg-[#08090D] px-6 py-1.5 flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-400">
+      <div class="flex items-center space-x-2">
+        <!-- HashiCorp Monogram SVG -->
+        <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M10.5 2L3 6.3v11.4L10.5 22v-3.5L6 15.9V8.1l4.5-2.6V2zm3 0v3.5L18 8.1v7.8l-4.5 2.6V22L21 17.7V6.3L13.5 2zM9.5 8.5v7h2v-2.5h1V15.5h2v-7h-2V11h-1V8.5h-2z"/>
+        </svg>
+        <span class="text-slate-300 font-semibold">HashiCorp Cloud Platform</span>
+        <span class="text-slate-600">/</span>
+        <span>dc1-openshift</span>
+        <span class="text-slate-600">/</span>
+        <span>ns: <strong class="text-slate-200">camp-travel</strong></span>
+        <span class="text-slate-600">/</span>
+        <span class="text-[#E02B80] font-semibold">Consul Agentic Runtime Fabric</span>
       </div>
-      <div>
-        <div class="flex items-center space-x-2">
-          <h1 class="text-base font-bold tracking-tight text-white">Consul Agentic Runtime Fabric</h1>
-          <span class="text-[11px] bg-red-950 text-red-400 border border-red-800 px-2 py-0.5 rounded-full font-mono">Consul 2.1 Enterprise</span>
-          <span class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-full font-mono">consul-ai=enabled</span>
-        </div>
-        <p class="text-xs text-slate-400">5-Act Interactive Multi-Agent Governance, MCP Sidecar & Cycle Detection Showcase</p>
+      <div class="flex items-center space-x-4">
+        <span class="flex items-center space-x-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span>Control Plane: <strong class="text-slate-200">v2.1.0+ent</strong></span>
+        </span>
+        <span class="text-slate-600">|</span>
+        <span>Feature Gate: <code class="text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-1.5 py-0.2 rounded">consul-ai=enabled</code></span>
+        <span class="text-slate-600">|</span>
+        <span>Data Plane: <strong class="text-slate-200">Envoy v1.31 + builtin/ext-proc</strong></span>
       </div>
     </div>
 
-    <!-- Identity Plane Persona Switcher & Circuit Breaker Status -->
-    <div class="flex flex-wrap items-center gap-3 text-xs font-mono">
-      <!-- Circuit Breaker Pill -->
-      <div id="circuit-pill-container" class="flex items-center space-x-2 bg-slate-800/90 border border-slate-700 px-3 py-1.5 rounded-lg">
-        <span id="circuit-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
-        <span class="text-slate-400">csl-ag-ana Circuit:</span>
-        <span id="circuit-state-label" class="text-emerald-400 font-bold">CLOSED</span>
-        <button id="btn-reset-circuit" onclick="resetCircuitBreaker()" class="hidden ml-2 bg-rose-600 hover:bg-rose-500 text-white px-2 py-0.5 rounded text-[10px] font-bold transition">
-          Reset Circuit
+    <!-- Primary Console Header -->
+    <div class="px-6 py-3 flex flex-wrap items-center justify-between gap-4 max-w-[1600px] mx-auto w-full">
+      <div class="flex items-center space-x-3.5">
+        <!-- Official Consul Brand Hexagon Badge -->
+        <div class="w-10 h-10 rounded-md bg-[#CA2171]/15 border border-[#CA2171]/50 flex items-center justify-center shadow-inner">
+          <svg class="w-6 h-6 text-[#CA2171]" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L3 7v10l9 5 9-5V7l-9-5zm0 2.2l6.8 3.8v7.6L12 19.4l-6.8-3.8V8L12 4.2z"/>
+            <circle cx="12" cy="12" r="3.2"/>
+            <circle cx="16.5" cy="9.5" r="1.3"/>
+            <circle cx="16.5" cy="14.5" r="1.3"/>
+            <circle cx="7.5" cy="12" r="1.3"/>
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2.5">
+            <h1 class="text-base font-semibold tracking-tight text-white">Consul Agentic Runtime Fabric</h1>
+            <span class="hds-badge bg-[#CA2171]/15 text-[#F472B6] border border-[#CA2171]/40">v2.1 Enterprise</span>
+            <span class="hds-badge bg-slate-800/90 text-slate-300 border border-slate-700">CAMP Reference Workbench</span>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">
+            Distinguished Engineering Evaluation Console • L7 MCP JSON-RPC Governance, RFC 8693 OBO Identity, AI Gateway Failover &amp; Asynchronous Cycle Detection
+          </p>
+        </div>
+      </div>
+
+      <!-- Right Control Cluster: Chaos Fault Toggle, Circuit Breaker, OBO Persona, CRD Inspector -->
+      <div class="flex flex-wrap items-center gap-2.5 text-xs font-mono">
+        <!-- Primary LLM Fault Injection Toggle (csl-inf-rt) -->
+        <button id="btn-chaos-llm" onclick="togglePrimaryLlmOutage()" title="Toggle HTTP 503 fault on Priority-1 Llama-3-70B to test csl-inf-rt failover" class="flex items-center space-x-2 bg-[#12151E] hover:bg-[#171B26] border border-[#262C3D] px-3 py-1.5 rounded text-slate-300 transition">
+          <span id="chaos-llm-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+          <span class="text-slate-400">Primary LLM 503 Fault:</span>
+          <span id="chaos-llm-label" class="text-slate-300 font-semibold">OFF</span>
+        </button>
+
+        <!-- Agentic Analytics (csl-ag-ana) Circuit Breaker Pill -->
+        <div id="circuit-pill-container" class="flex items-center space-x-2 bg-[#12151E] border border-[#262C3D] px-3 py-1.5 rounded">
+          <span id="circuit-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span class="text-slate-400">csl-ag-ana Circuit:</span>
+          <span id="circuit-state-label" class="text-emerald-400 font-bold">CLOSED</span>
+          <button id="btn-reset-circuit" onclick="resetCircuitBreaker()" class="hidden ml-1.5 bg-[#CA2171] hover:bg-[#E02B80] text-white px-2 py-0.5 rounded text-[10px] font-semibold transition">
+            Reset Circuit
+          </button>
+        </div>
+
+        <!-- Identity Plane RFC 8693 OBO Subject Selector -->
+        <div class="flex items-center space-x-2 bg-[#12151E] border border-[#262C3D] px-3 py-1 rounded">
+          <i class="fa-solid fa-id-card-clip text-[#F472B6]"></i>
+          <span class="text-slate-400">OBO Subject:</span>
+          <select id="persona-select" onchange="handlePersonaChange()" class="bg-[#08090D] border border-[#2E3548] rounded px-2 py-0.5 text-slate-100 font-semibold text-xs focus:outline-none focus:border-[#CA2171]">
+            <option value="traveler-101">Alex Mercer (VP Eng • Full OBO)</option>
+            <option value="contractor-202">Sam Taylor (Contractor • Restricted OBO)</option>
+          </select>
+        </div>
+
+        <!-- Act 5 Modal Trigger -->
+        <button onclick="openInspectorModal()" class="bg-[#CA2171]/15 hover:bg-[#CA2171]/25 border border-[#CA2171]/50 text-[#F9A8D4] px-3 py-1.5 rounded flex items-center space-x-1.5 font-semibold transition">
+          <i class="fa-solid fa-terminal text-[#F472B6]"></i>
+          <span>Act 5: CRDs &amp; Zero-Code OTel</span>
         </button>
       </div>
-
-      <!-- Identity Plane Persona Selector -->
-      <div class="flex items-center space-x-2 bg-indigo-950/80 border border-indigo-700/70 text-indigo-300 px-3 py-1.5 rounded-lg">
-        <i class="fa-solid fa-id-badge text-indigo-400"></i>
-        <span>OBO Identity:</span>
-        <select id="persona-select" onchange="handlePersonaChange()" class="bg-slate-900 border border-indigo-700 rounded px-2 py-0.5 text-white font-bold text-xs focus:outline-none">
-          <option value="traveler-101">Alex Mercer (VP Eng • Full OBO)</option>
-          <option value="contractor-202">Sam Taylor (Contractor • Restricted OBO)</option>
-        </select>
-      </div>
-
-      <!-- Act 5 Inspector Button -->
-      <button onclick="openInspectorModal()" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition">
-        <i class="fa-solid fa-code text-sky-400"></i>
-        <span>Act 5: CRDs & Zero-Code OTel</span>
-      </button>
     </div>
   </header>
 
-  <!-- 5-Act Interactive Governance Showcase Bar -->
-  <section class="bg-slate-900/60 border-b border-slate-800/80 px-6 py-3">
-    <div class="max-w-7xl mx-auto">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-bold flex items-center space-x-2">
-          <i class="fa-solid fa-sliders text-red-400"></i>
-          <span>Interactive Platform Governance Scenarios (Click an Act to Run Live)</span>
-        </span>
-        <span id="active-scenario-badge" class="text-[11px] font-mono text-emerald-400">Active Mode: Standard Happy Path</span>
+  <!-- ===================================================================== -->
+  <!-- 5-ACT ARCHITECTURAL EVALUATION MATRIX RIBBON                          -->
+  <!-- ===================================================================== -->
+  <section class="bg-[#0E1015] border-b border-[#222736] px-6 py-3">
+    <div class="max-w-[1600px] mx-auto">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+        <div class="flex items-center space-x-2">
+          <span class="text-[11px] font-mono uppercase tracking-wider text-slate-300 font-semibold flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-sm bg-[#CA2171]"></span>
+            <span>5-Act Architectural Evaluation Matrix — Select a Governance Scenario to Execute Against the Mesh</span>
+          </span>
+        </div>
+        <div class="flex items-center space-x-3">
+          <span id="active-scenario-badge" class="hds-badge bg-emerald-950/70 text-emerald-300 border border-emerald-800/70">
+            Active Mode: Standard Happy Path
+          </span>
+        </div>
       </div>
+
       <div class="grid grid-cols-1 md:grid-cols-5 gap-2.5 text-xs">
-        <button onclick="triggerActScenario('normal')" id="act-btn-normal" class="text-left p-2.5 rounded-xl border border-emerald-700/80 bg-emerald-950/30 hover:bg-emerald-950/50 transition">
-          <div class="flex items-center justify-between font-bold text-emerald-300">
-            <span>✅ Happy Path</span>
-            <span class="text-[10px] font-mono bg-emerald-900/60 px-1.5 py-0.5 rounded">Baseline</span>
+        <!-- Baseline: Happy Path -->
+        <button onclick="triggerActScenario('normal')" id="act-btn-normal" class="hds-act-card active-act text-left p-3 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between gap-1">
+              <span class="font-semibold text-white flex items-center space-x-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span>Baseline: Full Fabric</span>
+              </span>
+              <span class="font-mono text-[10px] bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 px-1.5 py-0.5 rounded">HAPPY PATH</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1.5 leading-snug">
+              Hop-by-hop narrowed RFC 8693 OBO tokens, JSON-RPC 2.0 <code class="text-slate-300">tools/call</code>, Vault egress key injection &amp; signed HITL gate.
+            </p>
           </div>
-          <p class="text-[11px] text-slate-400 mt-1">Full OBO token chain, JSON-RPC MCP tools, Vault egress & HITL approval.</p>
+          <div class="mt-2.5 pt-2 border-t border-[#1F2433] flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <span>SPIFFE mTLS + OBO</span>
+            <span class="text-emerald-400">200 OK</span>
+          </div>
         </button>
 
-        <button onclick="triggerActScenario('act1_llm_failover')" id="act-btn-act1_llm_failover" class="text-left p-2.5 rounded-xl border border-slate-800 bg-slate-900 hover:border-amber-600/70 hover:bg-amber-950/20 transition">
-          <div class="flex items-center justify-between font-bold text-amber-300">
-            <span>⚡ Act 1: AI GW Failover</span>
-            <span class="text-[10px] font-mono bg-amber-950 text-amber-400 px-1.5 py-0.5 rounded">csl-inf-rt</span>
+        <!-- Act 1: AI Gateway Failover -->
+        <button onclick="triggerActScenario('act1_llm_failover')" id="act-btn-act1_llm_failover" class="hds-act-card text-left p-3 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between gap-1">
+              <span class="font-semibold text-white flex items-center space-x-1.5">
+                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                <span>Act 1: AI GW Failover</span>
+              </span>
+              <span class="font-mono text-[10px] bg-amber-950/80 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded">csl-inf-rt</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1.5 leading-snug">
+              Injects HTTP 503 on Priority-1 Llama-3-70B. Auto-translates OpenAI schema to Anthropic <code class="text-slate-300">/v1/messages</code> (Claude 3.5).
+            </p>
           </div>
-          <p class="text-[11px] text-slate-400 mt-1">Simulate Llama-3 503 outage &rarr; auto-translate OpenAI to Claude 3.5 Sonnet.</p>
+          <div class="mt-2.5 pt-2 border-t border-[#1F2433] flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <span>unix://csl-ig-pro.sock</span>
+            <span class="text-amber-400">503 &rarr; 200</span>
+          </div>
         </button>
 
-        <button onclick="triggerActScenario('act2_unauthorized_tool')" id="act-btn-act2_unauthorized_tool" class="text-left p-2.5 rounded-xl border border-slate-800 bg-slate-900 hover:border-purple-600/70 hover:bg-purple-950/20 transition">
-          <div class="flex items-center justify-between font-bold text-purple-300">
-            <span>🛡️ Act 2: MCP Tool Policy</span>
-            <span class="text-[10px] font-mono bg-purple-950 text-purple-400 px-1.5 py-0.5 rounded">csl-mcp-sc</span>
+        <!-- Act 2: MCP Sidecar Tool Policy -->
+        <button onclick="triggerActScenario('act2_unauthorized_tool')" id="act-btn-act2_unauthorized_tool" class="hds-act-card text-left p-3 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between gap-1">
+              <span class="font-semibold text-white flex items-center space-x-1.5">
+                <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+                <span>Act 2: MCP Tool Policy</span>
+              </span>
+              <span class="font-mono text-[10px] bg-purple-950/80 text-purple-300 border border-purple-800/60 px-1.5 py-0.5 rounded">csl-mcp-sc</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1.5 leading-snug">
+              Discovery &ne; execution: <code class="text-slate-300">booking-agent</code> discovers <code class="text-slate-300">override_hotel_rate</code> via <code class="text-slate-300">tools/list</code>; sidecar blocks <code class="text-slate-300">tools/call</code>.
+            </p>
           </div>
-          <p class="text-[11px] text-slate-400 mt-1">Agent discovers <code>override_hotel_rate</code> but sidecar blocks JSON-RPC call.</p>
+          <div class="mt-2.5 pt-2 border-t border-[#1F2433] flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <span>unix://csl-mcp-sc.sock</span>
+            <span class="text-purple-400">RPC -32001</span>
+          </div>
         </button>
 
-        <button onclick="triggerActScenario('act3_contractor_obo')" id="act-btn-act3_contractor_obo" class="text-left p-2.5 rounded-xl border border-slate-800 bg-slate-900 hover:border-indigo-600/70 hover:bg-indigo-950/20 transition">
-          <div class="flex items-center justify-between font-bold text-indigo-300">
-            <span>🔐 Act 3: OBO Identity</span>
-            <span class="text-[10px] font-mono bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded">OBO Scopes</span>
+        <!-- Act 3: OBO Identity Narrowing -->
+        <button onclick="triggerActScenario('act3_contractor_obo')" id="act-btn-act3_contractor_obo" class="hds-act-card text-left p-3 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between gap-1">
+              <span class="font-semibold text-white flex items-center space-x-1.5">
+                <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                <span>Act 3: OBO Delegation</span>
+              </span>
+              <span class="font-mono text-[10px] bg-sky-950/80 text-sky-300 border border-sky-800/60 px-1.5 py-0.5 rounded">RFC 8693 OBO</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1.5 leading-snug">
+              Contractor <code class="text-slate-300">Sam Taylor</code> granted read/plan scopes; denied partner GDS egress at <code class="text-slate-300">terminating-gw</code> &amp; booking.
+            </p>
           </div>
-          <p class="text-[11px] text-slate-400 mt-1">Contractor Sam Taylor allowed read/search, blocked from GDS egress & booking.</p>
+          <div class="mt-2.5 pt-2 border-t border-[#1F2433] flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <span>Caller/Dest OBO Filter</span>
+            <span class="text-sky-400">-32002 / 403</span>
+          </div>
         </button>
 
-        <button onclick="triggerActScenario('act4_cycle_loop')" id="act-btn-act4_cycle_loop" class="text-left p-2.5 rounded-xl border border-slate-800 bg-slate-900 hover:border-rose-600/70 hover:bg-rose-950/20 transition">
-          <div class="flex items-center justify-between font-bold text-rose-300">
-            <span>🔄 Act 4: Cycle Detection</span>
-            <span class="text-[10px] font-mono bg-rose-950 text-rose-400 px-1.5 py-0.5 rounded">csl-ag-ana</span>
+        <!-- Act 4: Cycle Detection & Circuit Breaker -->
+        <button onclick="triggerActScenario('act4_cycle_loop')" id="act-btn-act4_cycle_loop" class="hds-act-card text-left p-3 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between gap-1">
+              <span class="font-semibold text-white flex items-center space-x-1.5">
+                <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                <span>Act 4: Cycle Breaker</span>
+              </span>
+              <span class="font-mono text-[10px] bg-rose-950/80 text-rose-300 border border-rose-800/60 px-1.5 py-0.5 rounded">csl-ag-ana</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1.5 leading-snug">
+              Runaway retry loop on sold-out flight <code class="text-slate-300">UA-999-SOLDOUT</code>. SHA-256 fingerprint trips agent circuit at repetition #3.
+            </p>
           </div>
-          <p class="text-[11px] text-slate-400 mt-1">Trigger runaway retry loop on sold-out flight &rarr; trips agent circuit breaker.</p>
+          <div class="mt-2.5 pt-2 border-t border-[#1F2433] flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <span>BullMQ &rarr; csl-ag-ana</span>
+            <span class="text-rose-400">RPC -32029</span>
+          </div>
         </button>
       </div>
     </div>
   </section>
 
-  <!-- Main Content Grid -->
-  <main class="flex-1 p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto w-full">
+  <!-- ===================================================================== -->
+  <!-- MAIN 12-COLUMN ENGINEERING WORKBENCH                                  -->
+  <!-- ===================================================================== -->
+  <main class="flex-1 px-6 py-5 grid grid-cols-1 lg:grid-cols-12 gap-5 max-w-[1600px] mx-auto w-full">
 
-    <!-- Left Column: Traveler Trip Request & Active OBO Claims (4 cols) -->
-    <section class="lg:col-span-4 flex flex-col space-y-5">
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col space-y-4">
-        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-          <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300 flex items-center space-x-2">
-            <i class="fa-solid fa-plane-departure text-red-400"></i>
+    <!-- =================================================================== -->
+    <!-- LEFT COLUMN (3 COLS): WORKLOAD DISPATCH & IDENTITY PLANE INSPECTOR  -->
+    <!-- =================================================================== -->
+    <section class="lg:col-span-3 flex flex-col space-y-5">
+
+      <!-- Card 1: Reference Workload Dispatch (Traveler Workspace) -->
+      <div class="hds-card overflow-hidden">
+        <div class="hds-card-header flex items-center justify-between">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-200 flex items-center space-x-2">
+            <i class="fa-solid fa-sliders text-[#CA2171]"></i>
             <span>Traveler Workspace</span>
           </h2>
-          <span class="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded">Experience UI</span>
+          <span class="font-mono text-[10px] text-slate-400 bg-[#08090D] border border-[#262C3D] px-2 py-0.5 rounded">POST /api/travel/plan</span>
         </div>
 
-        <!-- Quick Pre-fill Destinations -->
-        <div>
-          <label class="text-xs text-slate-400 block mb-2 font-medium">Destination Presets</label>
-          <div class="grid grid-cols-3 gap-2 text-xs">
-            <button type="button" onclick="setScenario('sf')" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg p-2 text-left transition font-medium text-slate-200">
-              <span class="block font-bold">🌉 San Francisco</span>
-              <span class="text-[10px] text-slate-400">AI Summit ($2.5k)</span>
-            </button>
-            <button type="button" onclick="setScenario('london')" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg p-2 text-left transition font-medium text-slate-200">
-              <span class="block font-bold">🇬🇧 London</span>
-              <span class="text-[10px] text-slate-400">Client Exec ($3.2k)</span>
-            </button>
-            <button type="button" onclick="setScenario('tokyo')" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg p-2 text-left transition font-medium text-slate-200">
-              <span class="block font-bold">🇯🇵 Tokyo</span>
-              <span class="text-[10px] text-slate-400">Partner Days ($4k)</span>
-            </button>
+        <div class="p-4 space-y-4">
+          <!-- Workload Payload Presets -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-[11px] font-mono uppercase tracking-wider text-slate-400">Reference Payload Presets</label>
+              <span class="text-[10px] font-mono text-slate-500">Select to populate</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-xs">
+              <button type="button" onclick="setScenario('sf')" class="bg-[#08090D] hover:bg-[#171B26] border border-[#262C3D] hover:border-[#CA2171]/60 rounded p-2 text-left transition">
+                <span class="block font-semibold text-slate-200">SFO Summit</span>
+                <span class="text-[10px] font-mono text-slate-400">JFK&rarr;SFO • $2.5k</span>
+              </button>
+              <button type="button" onclick="setScenario('london')" class="bg-[#08090D] hover:bg-[#171B26] border border-[#262C3D] hover:border-[#CA2171]/60 rounded p-2 text-left transition">
+                <span class="block font-semibold text-slate-200">LHR Review</span>
+                <span class="text-[10px] font-mono text-slate-400">JFK&rarr;LHR • $3.2k</span>
+              </button>
+              <button type="button" onclick="setScenario('tokyo')" class="bg-[#08090D] hover:bg-[#171B26] border border-[#262C3D] hover:border-[#CA2171]/60 rounded p-2 text-left transition">
+                <span class="block font-semibold text-slate-200">HND Partner</span>
+                <span class="text-[10px] font-mono text-slate-400">SFO&rarr;HND • $4.0k</span>
+              </button>
+            </div>
           </div>
+
+          <!-- Request Dispatch Form -->
+          <form id="trip-form" onsubmit="handleTripSubmit(event)" class="space-y-3 text-xs">
+            <input id="inp-scenario-mode" type="hidden" value="normal">
+
+            <div>
+              <label class="text-[11px] font-mono text-slate-400 block mb-1">Delegated User Subject (<code class="text-slate-300">x-obo-user-id</code>)</label>
+              <input id="inp-traveler" type="text" value="Alex Mercer" required class="hds-input w-full px-3 py-1.5 text-xs font-medium">
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <div>
+                <label class="text-[11px] font-mono text-slate-400 block mb-1">Origin IATA</label>
+                <input id="inp-origin" type="text" value="JFK" required class="hds-input w-full px-3 py-1.5 text-xs font-mono">
+              </div>
+              <div>
+                <label class="text-[11px] font-mono text-slate-400 block mb-1">Destination</label>
+                <input id="inp-destination" type="text" value="San Francisco" required class="hds-input w-full px-3 py-1.5 text-xs">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <div>
+                <label class="text-[11px] font-mono text-slate-400 block mb-1">Duration (Days)</label>
+                <input id="inp-duration" type="number" value="4" min="1" max="14" required class="hds-input w-full px-3 py-1.5 text-xs font-mono">
+              </div>
+              <div>
+                <label class="text-[11px] font-mono text-slate-400 block mb-1">Policy Budget (USD)</label>
+                <input id="inp-budget" type="number" value="2500" min="500" max="10000" required class="hds-input w-full px-3 py-1.5 text-xs font-mono">
+              </div>
+            </div>
+
+            <div>
+              <label class="text-[11px] font-mono text-slate-400 block mb-1">Business Context / Prompt Intent</label>
+              <input id="inp-purpose" type="text" value="Annual HashiCorp & AI Architecture Summit" required class="hds-input w-full px-3 py-1.5 text-xs">
+            </div>
+
+            <button id="btn-submit" type="submit" class="w-full mt-2 bg-[#CA2171] hover:bg-[#E02B80] font-semibold text-white py-2.5 px-4 rounded border border-[#E02B80]/50 shadow-lg shadow-[#CA2171]/20 flex items-center justify-center space-x-2 transition">
+              <i class="fa-solid fa-play text-[10px]"></i>
+              <span>Dispatch Request to Ingress Gateway</span>
+            </button>
+          </form>
         </div>
-
-        <!-- Form Inputs -->
-        <form id="trip-form" onsubmit="handleTripSubmit(event)" class="space-y-3 text-xs">
-          <input id="inp-scenario-mode" type="hidden" value="normal">
-          <div>
-            <label class="text-slate-400 block mb-1">Traveler Name</label>
-            <input id="inp-traveler" type="text" value="Alex Mercer" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="text-slate-400 block mb-1">Origin City / Code</label>
-              <input id="inp-origin" type="text" value="JFK" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
-            </div>
-            <div>
-              <label class="text-slate-400 block mb-1">Destination City</label>
-              <input id="inp-destination" type="text" value="San Francisco" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="text-slate-400 block mb-1">Duration (Days)</label>
-              <input id="inp-duration" type="number" value="4" min="1" max="14" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
-            </div>
-            <div>
-              <label class="text-slate-400 block mb-1">Budget (USD)</label>
-              <input id="inp-budget" type="number" value="2500" min="500" max="10000" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
-            </div>
-          </div>
-
-          <div>
-            <label class="text-slate-400 block mb-1">Trip Purpose</label>
-            <input id="inp-purpose" type="text" value="Annual HashiCorp & AI Architecture Summit" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-red-500">
-          </div>
-
-          <button id="btn-submit" type="submit" class="w-full mt-4 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 font-semibold text-white py-2.5 rounded-lg shadow-lg shadow-red-900/30 flex items-center justify-center space-x-2 transition">
-            <i class="fa-solid fa-wand-magic-sparkles"></i>
-            <span>Orchestrate Travel via Mesh</span>
-          </button>
-        </form>
       </div>
 
-      <!-- Identity Plane OBO Hop-by-Hop Delegation Inspector -->
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-xs font-mono space-y-2.5">
-        <div class="flex items-center justify-between text-slate-300 border-b border-slate-800 pb-2">
-          <span class="font-bold flex items-center space-x-1.5">
-            <i class="fa-solid fa-key text-indigo-400"></i>
-            <span>Identity Plane: OBO Token Chain</span>
+      <!-- Card 2: Identity Plane — Dual Identity (SPIFFE + RFC 8693 OBO) -->
+      <div class="hds-card overflow-hidden flex-1 flex flex-col">
+        <div class="hds-card-header flex items-center justify-between">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-200 flex items-center space-x-2">
+            <i class="fa-solid fa-fingerprint text-sky-400"></i>
+            <span>Identity Plane (RFC 8693 OBO)</span>
           </span>
-          <span id="obo-role-badge" class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded">VP Engineering</span>
+          <span id="obo-role-badge" class="hds-badge bg-sky-950/80 text-sky-300 border border-sky-800/70">VP Engineering</span>
         </div>
-        <div id="obo-scopes-list" class="flex flex-wrap gap-1 pt-1">
-          <span class="text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded">travel:read</span>
-          <span class="text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded">travel:plan</span>
-          <span class="text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded">booking:reserve</span>
-          <span class="text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded">partner:gds_egress</span>
-        </div>
-        <div id="obo-chain-box" class="text-[10px] text-slate-400 space-y-1.5 pt-2 border-t border-slate-800/80">
-          <div><span class="text-indigo-400">Hop 1:</span> api-gw &rarr; travel-orchestrator (OBO Exchange)</div>
-          <div><span class="text-sky-400">Hop 2a:</span> orchestrator &rarr; weather-mcp <span class="text-slate-500">[weather:forecast]</span></div>
-          <div><span class="text-emerald-400">Hop 2b:</span> booking-agent &rarr; flight/hotel-mcp <span class="text-slate-500">[narrowed]</span></div>
+
+        <div class="p-4 text-xs font-mono space-y-3 flex-1 flex flex-col justify-between">
+          <div class="space-y-3">
+            <!-- Workload SPIFFE ID -->
+            <div class="bg-[#08090D] border border-[#222736] rounded p-2.5 space-y-1">
+              <div class="flex items-center justify-between text-[10px] text-slate-400">
+                <span>WORKLOAD X.509 SVID (mTLS)</span>
+                <span class="text-emerald-400">VALIDATED</span>
+              </div>
+              <div class="text-[11px] text-slate-200 break-all">
+                spiffe://cluster.local/ns/camp-travel/sa/booking-agent
+              </div>
+            </div>
+
+            <!-- Granted OBO Scopes -->
+            <div>
+              <div class="text-[10px] text-slate-400 uppercase tracking-wider mb-1.5">Granted Subject OAuth Scopes</div>
+              <div id="obo-scopes-list" class="flex flex-wrap gap-1.5">
+                <span class="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded">travel:read</span>
+                <span class="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded">travel:plan</span>
+                <span class="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded">booking:reserve</span>
+                <span class="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded">partner:gds_egress</span>
+              </div>
+            </div>
+
+            <!-- Hop-by-Hop Token Narrowing -->
+            <div>
+              <div class="text-[10px] text-slate-400 uppercase tracking-wider mb-1.5">Hop-by-Hop Scope Attenuation</div>
+              <div id="obo-chain-box" class="bg-[#08090D] border border-[#222736] rounded p-2.5 text-[11px] text-slate-300 space-y-1.5">
+                <div><span class="text-sky-400">Hop 1 (Ingress):</span> api-gw &rarr; orchestrator <span class="text-slate-500">[token exchange]</span></div>
+                <div><span class="text-emerald-400">Hop 2a (Weather):</span> narrowed &rarr; <span class="text-slate-400">[travel:read, weather:forecast]</span></div>
+                <div><span class="text-[#F472B6]">Hop 2b (Booking):</span> narrowed &rarr; <span class="text-slate-400">[booking:reserve, partner:gds_egress]</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pt-2 border-t border-[#1D2230] text-[10px] text-slate-500 flex items-center justify-between">
+            <span>Processor: csl-id-caller / csl-id-dest</span>
+            <span>JWKS: IBM Verify IAM</span>
+          </div>
         </div>
       </div>
+
     </section>
 
-    <!-- Center Column: Multi-Agent Execution, Interceptions & Itinerary (5 cols) -->
-    <section class="lg:col-span-5 flex flex-col space-y-5">
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex-1 flex flex-col space-y-4">
-        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-          <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300 flex items-center space-x-2">
-            <i class="fa-solid fa-network-wired text-indigo-400"></i>
-            <span>Agentic Runtime Fabric Data Plane</span>
-          </h2>
-          <span id="agent-status" class="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">Idle</span>
-        </div>
+    <!-- =================================================================== -->
+    <!-- CENTER COLUMN (6 COLS): LIVE TOPOLOGY, PIPELINE & WIRE INSPECTOR    -->
+    <!-- =================================================================== -->
+    <section class="lg:col-span-6 flex flex-col space-y-5">
 
-        <!-- Real-Time Agent Execution Pipeline -->
-        <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-4 space-y-2.5 font-mono text-xs">
-          <div class="text-slate-400 text-[11px] uppercase tracking-wider mb-1 font-bold">Live Mesh Flow (Zero-Code Instrumented)</div>
-          <div id="step-1" class="flex items-center space-x-3 text-slate-500">
-            <i class="fa-solid fa-circle-dot text-[10px]"></i>
-            <span>1. Ingress API Gateway & Caller/Dest OBO Token Exchange</span>
+      <!-- Center Main Workbench Card -->
+      <div class="hds-card flex-1 flex flex-col overflow-hidden">
+        <!-- Header with Sub-View Tabs -->
+        <div class="hds-card-header flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center space-x-2">
+            <i class="fa-solid fa-diagram-project text-[#CA2171]"></i>
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-200">Agentic Runtime Fabric Data Plane</h2>
+            <span id="agent-status" class="hds-badge bg-slate-800 text-slate-300 border border-slate-700">Idle</span>
           </div>
-          <div id="step-2" class="flex items-center space-x-3 text-slate-500">
-            <i class="fa-solid fa-circle-dot text-[10px]"></i>
-            <span>2. Travel Orchestrator (ai-agent) &rarr; Weather & Booking Agents</span>
-          </div>
-          <div id="step-3" class="flex items-center space-x-3 text-slate-500">
-            <i class="fa-solid fa-circle-dot text-[10px]"></i>
-            <span>3. MCP Sidecar (csl-mcp-sc) JSON-RPC Policy & Terminating GW</span>
-          </div>
-          <div id="step-4" class="flex items-center space-x-3 text-slate-500">
-            <i class="fa-solid fa-circle-dot text-[10px]"></i>
-            <span>4. AI Inference Gateway (csl-inf-rt) Capability Routing & Failover</span>
+
+          <!-- Center Workbench View Switcher -->
+          <div class="flex items-center bg-[#08090D] p-0.5 rounded border border-[#262C3D] text-[11px] font-mono">
+            <button type="button" id="tab-btn-dataplane" onclick="switchWorkbenchTab('dataplane')" class="px-2.5 py-1 rounded bg-[#CA2171] text-white font-semibold transition">
+              Data Plane &amp; Output
+            </button>
+            <button type="button" id="tab-btn-jsonrpc" onclick="switchWorkbenchTab('jsonrpc')" class="px-2.5 py-1 rounded text-slate-400 hover:text-slate-200 transition">
+              JSON-RPC &amp; ext-proc Wire
+            </button>
+            <button type="button" id="tab-btn-crds" onclick="switchWorkbenchTab('crds')" class="px-2.5 py-1 rounded text-slate-400 hover:text-slate-200 transition">
+              Consul 2.1 CRDs
+            </button>
           </div>
         </div>
 
-        <!-- Proxy Governance Interception & Cycle Detection Box (Dynamic) -->
-        <div id="governance-alert-box" class="hidden rounded-xl p-4 border border-rose-700/80 bg-rose-950/40 space-y-2 text-xs font-mono">
-          <div class="flex items-center justify-between">
-            <span class="font-bold text-rose-300 flex items-center space-x-1.5">
-              <i class="fa-solid fa-shield-halved text-rose-400"></i>
-              <span id="gov-alert-title">Consul Mesh Proxy Interception</span>
-            </span>
-            <span class="text-[10px] bg-rose-900/80 text-rose-200 px-2 py-0.5 rounded">ENFORCED AT PROXY</span>
-          </div>
-          <div id="gov-alert-list" class="space-y-2 text-[11px] text-rose-100"></div>
-        </div>
+        <!-- =============================================================== -->
+        <!-- TAB 1: DATA PLANE TOPOLOGY, PIPELINE & WORKLOAD OUTPUT          -->
+        <!-- =============================================================== -->
+        <div id="workbench-tab-dataplane" class="p-4 space-y-4 flex-1 flex flex-col">
 
-        <!-- Act 4 Cycle Detection Loop Table (Dynamic) -->
-        <div id="cycle-loop-box" class="hidden rounded-xl p-4 border border-amber-700/80 bg-amber-950/30 space-y-2 text-xs font-mono">
-          <div class="flex items-center justify-between">
-            <span class="font-bold text-amber-300 flex items-center space-x-1.5">
-              <i class="fa-solid fa-rotate text-amber-400"></i>
-              <span>Agentic Analytics (csl-ag-ana) Loop Telemetry</span>
-            </span>
-            <span class="text-[10px] bg-amber-900/70 text-amber-200 px-2 py-0.5 rounded">BullMQ &rarr; csl-ag-ana</span>
-          </div>
-          <div id="cycle-loop-rows" class="space-y-1.5 text-[11px]"></div>
-        </div>
-
-        <!-- Generated Itinerary & Proposal View -->
-        <div id="itinerary-container" class="space-y-3 hidden flex-1 flex flex-col">
-          <div class="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
+          <!-- Live Interactive SVG Service Mesh Topology Map -->
+          <div class="bg-[#08090D] border border-[#222736] rounded-md p-3">
             <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-bold text-red-400 uppercase tracking-wider">Executive Synthesis</span>
-              <span id="trip-budget-badge" class="text-xs px-2 py-0.5 rounded font-mono bg-emerald-950 text-emerald-400 border border-emerald-800">Within Budget</span>
+              <span class="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold flex items-center space-x-1.5">
+                <i class="fa-solid fa-bezier-curve text-[#CA2171]"></i>
+                <span>Live L7 Service Mesh &amp; Envoy ext-proc Filter Topology</span>
+              </span>
+              <div class="flex items-center space-x-3 text-[10px] font-mono text-slate-400">
+                <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-[#CA2171]"></span><span>ai-agent</span></span>
+                <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-sky-400"></span><span>mcp-server</span></span>
+                <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span><span>inference-gateway</span></span>
+                <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>csl-ag-ana</span></span>
+              </div>
             </div>
-            <p id="synthesis-text" class="text-xs text-slate-200 leading-relaxed"></p>
+
+            <!-- SVG Architecture Diagram -->
+            <div class="w-full overflow-x-auto">
+              <svg viewBox="0 0 760 205" class="w-full h-auto min-w-[640px] select-none font-mono">
+                <defs>
+                  <marker id="arrow-muted" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                    <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569" />
+                  </marker>
+                  <marker id="arrow-consul" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                    <path d="M 0 1 L 10 5 L 0 9 z" fill="#CA2171" />
+                  </marker>
+                  <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                    <path d="M 0 1 L 10 5 L 0 9 z" fill="#F59E0B" />
+                  </marker>
+                  <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                    <path d="M 0 1 L 10 5 L 0 9 z" fill="#10B981" />
+                  </marker>
+                </defs>
+
+                <!-- Mesh Edges -->
+                <!-- api-gw -> orchestrator -->
+                <line id="edge-gw-orch" x1="105" y1="95" x2="155" y2="95" stroke="#CA2171" stroke-width="1.5" marker-end="url(#arrow-consul)" class="mesh-edge-active" />
+                <!-- orchestrator -> travel-igw -->
+                <path id="edge-orch-igw" d="M 230 70 L 230 32 L 325 32" fill="none" stroke="#F59E0B" stroke-width="1.5" marker-end="url(#arrow-amber)" />
+                <!-- travel-igw -> llm-backend -->
+                <line id="edge-igw-llm" x1="465" y1="32" x2="535" y2="32" stroke="#F59E0B" stroke-width="1.5" marker-end="url(#arrow-amber)" />
+                <!-- orchestrator -> booking-agent -->
+                <line id="edge-orch-book" x1="295" y1="95" x2="345" y2="95" stroke="#CA2171" stroke-width="1.5" marker-end="url(#arrow-consul)" />
+                <!-- orchestrator -> weather-agent -->
+                <path id="edge-orch-weather" d="M 230 120 L 230 165 L 345 165" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-muted)" />
+                <!-- booking-agent -> flight/hotel-mcp -->
+                <line id="edge-book-mcp" x1="490" y1="95" x2="545" y2="95" stroke="#CA2171" stroke-width="1.5" marker-end="url(#arrow-consul)" />
+                <!-- booking-agent -> terminating-gw -->
+                <path id="edge-book-tgw" d="M 490 108 L 518 108 L 518 165 L 545 165" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-muted)" />
+                <!-- spans -> csl-nod-rly / csl-ag-ana -->
+                <path d="M 418 120 L 418 140" fill="none" stroke="#10B981" stroke-width="1" stroke-dasharray="2 2" />
+
+                <!-- Node 1: Ingress API GW -->
+                <g transform="translate(10, 72)">
+                  <rect width="95" height="46" rx="4" fill="#12151E" stroke="#334155" stroke-width="1.2"/>
+                  <text x="8" y="16" fill="#94A3B8" font-size="8.5">INGRESS ENVOY</text>
+                  <text x="8" y="29" fill="#F8FAFC" font-size="10" font-weight="bold">api-gw:10000</text>
+                  <text x="8" y="40" fill="#38BDF8" font-size="8">csl-id-caller</text>
+                </g>
+
+                <!-- Node 2: Travel Orchestrator -->
+                <g transform="translate(158, 70)">
+                  <rect width="136" height="50" rx="4" fill="#12151E" stroke="#CA2171" stroke-width="1.4"/>
+                  <text x="8" y="15" fill="#F472B6" font-size="8.5" font-weight="bold">ai-role: ai-agent</text>
+                  <text x="8" y="28" fill="#FFFFFF" font-size="10" font-weight="bold">orchestrator:8080</text>
+                  <text x="8" y="41" fill="#94A3B8" font-size="8">Narrowed OBO Issuer</text>
+                </g>
+
+                <!-- Node 3: AI Inference Gateway (travel-igw) -->
+                <g transform="translate(328, 8)">
+                  <rect width="136" height="48" rx="4" fill="#12151E" stroke="#F59E0B" stroke-width="1.4"/>
+                  <text x="8" y="14" fill="#FBBF24" font-size="8.5" font-weight="bold">inference-gateway</text>
+                  <text x="8" y="27" fill="#FFFFFF" font-size="10" font-weight="bold">travel-igw:10001</text>
+                  <text x="8" y="40" fill="#94A3B8" font-size="8">csl-inf-rt • csl-ig-pro</text>
+                </g>
+
+                <!-- Node 4: Foundation Model Pool -->
+                <g transform="translate(538, 8)">
+                  <rect id="svg-node-llm" width="210" height="48" rx="4" fill="#12151E" stroke="#10B981" stroke-width="1.3"/>
+                  <text x="8" y="14" fill="#34D399" font-size="8.5" font-weight="bold">ai-role: inference-model</text>
+                  <text id="svg-llm-primary" x="8" y="27" fill="#FFFFFF" font-size="9.5" font-weight="bold">P1: Llama-3-70B (OpenAI)</text>
+                  <text id="svg-llm-secondary" x="8" y="40" fill="#94A3B8" font-size="8">P2: Claude 3.5 Sonnet (Vault Key)</text>
+                </g>
+
+                <!-- Node 5: Booking Sub-Agent + csl-mcp-sc -->
+                <g transform="translate(348, 70)">
+                  <rect id="svg-node-booking" width="142" height="50" rx="4" fill="#12151E" stroke="#CA2171" stroke-width="1.4"/>
+                  <text x="8" y="15" fill="#F472B6" font-size="8.5" font-weight="bold">ai-agent + ext-proc</text>
+                  <text x="8" y="28" fill="#FFFFFF" font-size="10" font-weight="bold">booking-agent:8086</text>
+                  <text x="8" y="41" fill="#E2E8F0" font-size="8">unix://csl-mcp-sc.sock</text>
+                </g>
+
+                <!-- Node 6: Flight & Hotel MCP Servers -->
+                <g transform="translate(548, 70)">
+                  <rect id="svg-node-mcp" width="200" height="50" rx="4" fill="#12151E" stroke="#38BDF8" stroke-width="1.3"/>
+                  <text x="8" y="15" fill="#38BDF8" font-size="8.5" font-weight="bold">ai-role: mcp-server (JSON-RPC)</text>
+                  <text x="8" y="28" fill="#FFFFFF" font-size="9.5" font-weight="bold">flight-mcp:8084 / hotel:8083</text>
+                  <text id="svg-mcp-status" x="8" y="41" fill="#10B981" font-size="8">ACL + OBO + HITL Enforced</text>
+                </g>
+
+                <!-- Node 7: Weather Agent & csl-ag-ana -->
+                <g transform="translate(348, 144)">
+                  <rect id="svg-node-indigo" width="142" height="48" rx="4" fill="#12151E" stroke="#10B981" stroke-width="1.3"/>
+                  <text x="8" y="14" fill="#34D399" font-size="8.5" font-weight="bold">csl-nod-rly &rarr; csl-ag-ana</text>
+                  <text x="8" y="27" fill="#FFFFFF" font-size="9.5" font-weight="bold">Cycle Detector :8089</text>
+                  <text id="svg-indigo-status" x="8" y="40" fill="#10B981" font-size="8">SHA-256 Tuple Circuit: CLOSED</text>
+                </g>
+
+                <!-- Node 8: Terminating GW & External Partner GDS -->
+                <g transform="translate(548, 144)">
+                  <rect id="svg-node-tgw" width="200" height="48" rx="4" fill="#12151E" stroke="#64748B" stroke-width="1.3"/>
+                  <text x="8" y="14" fill="#FBBF24" font-size="8.5" font-weight="bold">terminating-gw:10002 (Egress)</text>
+                  <text x="8" y="27" fill="#FFFFFF" font-size="9.5" font-weight="bold">external-mcp:8088 (GDS)</text>
+                  <text id="svg-tgw-status" x="8" y="40" fill="#94A3B8" font-size="8">Vault Key + partner:gds_egress</text>
+                </g>
+              </svg>
+            </div>
           </div>
 
-          <!-- Cards for Flight, Hotel, Ground Transport -->
-          <div class="grid grid-cols-3 gap-2.5 text-xs">
-            <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-1">
-              <div class="text-[11px] text-slate-400 font-bold flex items-center space-x-1">
-                <i class="fa-solid fa-plane text-sky-400"></i>
-                <span>Flight MCP</span>
-              </div>
-              <div id="flight-val" class="text-slate-100 font-semibold truncate">--</div>
-              <div id="flight-price" class="text-[10px] text-emerald-400 font-mono">--</div>
+          <!-- 4-Step Live Execution Pipeline Trace -->
+          <div class="bg-[#08090D] border border-[#222736] rounded-md p-3.5 space-y-2 font-mono text-xs">
+            <div class="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-wider pb-1 border-b border-[#1A1E2B]">
+              <span>Zero-Code Instrumented Execution Pipeline</span>
+              <span>Envoy Filter Chain Progression</span>
             </div>
-
-            <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-1">
-              <div class="text-[11px] text-slate-400 font-bold flex items-center space-x-1">
-                <i class="fa-solid fa-hotel text-amber-400"></i>
-                <span>Hotel MCP</span>
+            <div id="step-1" class="flex items-center justify-between text-slate-400 py-0.5">
+              <div class="flex items-center space-x-2.5">
+                <i class="fa-solid fa-circle-dot text-[10px] text-slate-500"></i>
+                <span>1. Ingress API Gateway &amp; Caller/Destination RFC 8693 OBO Token Exchange</span>
               </div>
-              <div id="hotel-val" class="text-slate-100 font-semibold truncate">--</div>
-              <div id="hotel-price" class="text-[10px] text-emerald-400 font-mono">--</div>
+              <span class="text-[10px] text-slate-500">api-gw:10000</span>
             </div>
-
-            <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-1">
-              <div class="text-[11px] text-slate-400 font-bold flex items-center space-x-1">
-                <i class="fa-solid fa-car text-emerald-400"></i>
-                <span>Partner GDS</span>
+            <div id="step-2" class="flex items-center justify-between text-slate-400 py-0.5">
+              <div class="flex items-center space-x-2.5">
+                <i class="fa-solid fa-circle-dot text-[10px] text-slate-500"></i>
+                <span>2. Travel Orchestrator (<code class="text-slate-300">ai-agent</code>) &rarr; Narrowed Sub-Agent Delegation</span>
               </div>
-              <div id="car-val" class="text-slate-100 font-semibold truncate">--</div>
-              <div id="car-price" class="text-[10px] text-emerald-400 font-mono">--</div>
+              <span class="text-[10px] text-slate-500">orchestrator:8080</span>
+            </div>
+            <div id="step-3" class="flex items-center justify-between text-slate-400 py-0.5">
+              <div class="flex items-center space-x-2.5">
+                <i class="fa-solid fa-circle-dot text-[10px] text-slate-500"></i>
+                <span>3. MCP Sidecar (<code class="text-slate-300">csl-mcp-sc</code>) JSON-RPC 2.0 Policy &amp; Terminating Gateway Egress</span>
+              </div>
+              <span class="text-[10px] text-slate-500">csl-mcp-sc.sock</span>
+            </div>
+            <div id="step-4" class="flex items-center justify-between text-slate-400 py-0.5">
+              <div class="flex items-center space-x-2.5">
+                <i class="fa-solid fa-circle-dot text-[10px] text-slate-500"></i>
+                <span>4. AI Inference Gateway (<code class="text-slate-300">csl-inf-rt</code>) Priority Routing &amp; Schema Translation</span>
+              </div>
+              <span class="text-[10px] text-slate-500">csl-ig-pro.sock</span>
             </div>
           </div>
 
-          <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-1 text-xs">
-            <div class="text-[11px] text-slate-400 font-bold flex items-center space-x-1">
-              <i class="fa-solid fa-cloud-sun text-yellow-400"></i>
-              <span>Destination Climate Advisory (weather-mcp)</span>
+          <!-- Dynamic Proxy Governance Interception Banner (Act 2, Act 3, Act 4) -->
+          <div id="governance-alert-box" class="hidden rounded-md p-3.5 border border-rose-500/60 bg-rose-950/30 space-y-2 text-xs font-mono">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-rose-300 flex items-center space-x-2">
+                <i class="fa-solid fa-shield-halved text-rose-400"></i>
+                <span id="gov-alert-title">Consul Mesh Proxy Interception</span>
+              </span>
+              <span class="hds-badge bg-rose-950 text-rose-300 border border-rose-700">ENFORCED AT SIDECAR PROXY</span>
             </div>
-            <div id="weather-val" class="text-slate-300">--</div>
-            <div id="packing-val" class="text-[11px] text-slate-400 italic">--</div>
+            <div id="gov-alert-list" class="space-y-2 text-[11px] text-rose-100"></div>
           </div>
+
+          <!-- Dynamic Act 4 Cycle Detection Loop Telemetry Table -->
+          <div id="cycle-loop-box" class="hidden rounded-md p-3.5 border border-amber-500/60 bg-amber-950/25 space-y-2 text-xs font-mono">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-amber-300 flex items-center space-x-2">
+                <i class="fa-solid fa-rotate text-amber-400"></i>
+                <span>Agentic Analytics (csl-ag-ana) SHA-256 Cycle Detection Telemetry</span>
+              </span>
+              <span class="hds-badge bg-amber-950 text-amber-300 border border-amber-700">BullMQ: consul-ai-cycle-detection</span>
+            </div>
+            <div id="cycle-loop-rows" class="space-y-1.5 text-[11px]"></div>
+          </div>
+
+          <!-- Workload Output: Synthesized Itinerary & MCP Tool Results -->
+          <div id="itinerary-container" class="space-y-3 hidden flex-1 flex flex-col">
+            <div class="bg-[#08090D] border border-[#262C3D] rounded-md p-3.5">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="text-[11px] font-mono font-semibold text-[#F472B6] uppercase tracking-wider flex items-center space-x-1.5">
+                  <i class="fa-solid fa-microchip"></i>
+                  <span>Orchestrator LLM Synthesis Output</span>
+                </span>
+                <span id="trip-budget-badge" class="hds-badge bg-emerald-950/80 text-emerald-300 border border-emerald-800/70">Policy Compliant</span>
+              </div>
+              <p id="synthesis-text" class="text-xs text-slate-200 leading-relaxed"></p>
+            </div>
+
+            <!-- MCP Tool Execution Result Cards -->
+            <div class="grid grid-cols-3 gap-2.5 text-xs">
+              <div class="bg-[#08090D] border border-[#222736] p-3 rounded-md space-y-1">
+                <div class="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                  <span class="flex items-center space-x-1"><i class="fa-solid fa-plane text-sky-400"></i><span>flight-mcp:8084</span></span>
+                  <span>JSON-RPC</span>
+                </div>
+                <div id="flight-val" class="text-slate-100 font-semibold truncate pt-0.5">--</div>
+                <div id="flight-price" class="text-[11px] text-emerald-400 font-mono">--</div>
+              </div>
+
+              <div class="bg-[#08090D] border border-[#222736] p-3 rounded-md space-y-1">
+                <div class="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                  <span class="flex items-center space-x-1"><i class="fa-solid fa-hotel text-amber-400"></i><span>hotel-mcp:8083</span></span>
+                  <span>JSON-RPC</span>
+                </div>
+                <div id="hotel-val" class="text-slate-100 font-semibold truncate pt-0.5">--</div>
+                <div id="hotel-price" class="text-[11px] text-emerald-400 font-mono">--</div>
+              </div>
+
+              <div class="bg-[#08090D] border border-[#222736] p-3 rounded-md space-y-1">
+                <div class="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                  <span class="flex items-center space-x-1"><i class="fa-solid fa-car text-emerald-400"></i><span>external-mcp:8088</span></span>
+                  <span>Term-GW</span>
+                </div>
+                <div id="car-val" class="text-slate-100 font-semibold truncate pt-0.5">--</div>
+                <div id="car-price" class="text-[11px] text-emerald-400 font-mono">--</div>
+              </div>
+            </div>
+
+            <div class="bg-[#08090D] border border-[#222736] p-3 rounded-md flex items-center justify-between text-xs">
+              <div class="space-y-0.5">
+                <div class="text-[10px] font-mono text-slate-400 flex items-center space-x-1.5">
+                  <i class="fa-solid fa-cloud-sun text-yellow-400"></i>
+                  <span>weather-mcp:8082 (Scoped: travel:read, weather:forecast)</span>
+                </div>
+                <div id="weather-val" class="text-slate-200 font-medium">--</div>
+                <div id="packing-val" class="text-[11px] text-slate-400 font-mono">--</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- TAB 2: WIRE-LEVEL JSON-RPC 2.0 & ENVOY EXT-PROC INSPECTOR       -->
+        <!-- =============================================================== -->
+        <div id="workbench-tab-jsonrpc" class="hidden p-4 space-y-3 flex-1 flex flex-col font-mono text-xs">
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pb-2 border-b border-[#222736]">
+            <span>Captured Envoy <code class="text-slate-200">builtin/ext-proc</code> &amp; MCP JSON-RPC 2.0 Frames</span>
+            <span class="text-[#F472B6]">unix:///var/run/consul/csl-mcp-sc.sock</span>
+          </div>
+          <pre id="wire-inspector-json" class="bg-[#08090D] border border-[#222736] rounded-md p-3.5 text-[11px] text-slate-300 overflow-x-auto flex-1 max-h-[520px]">{
+  "inspector": "Execute any scenario from the 5-Act Matrix above to inspect live JSON-RPC 2.0 payloads, SPIFFE headers, OBO scopes, and ext-proc enforcement decisions."
+}</pre>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- TAB 3: CONSUL 2.1 CRD & HCL DECLARATIVE DEFINITIONS             -->
+        <!-- =============================================================== -->
+        <div id="workbench-tab-crds" class="hidden p-4 space-y-3 flex-1 flex flex-col font-mono text-xs">
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pb-2 border-b border-[#222736]">
+            <span>Active Kubernetes CRDs (<code class="text-slate-200">consul.hashicorp.com/v1alpha1</code>)</span>
+            <span class="text-emerald-400">helm/camp-travel/templates/consul-crds.yaml</span>
+          </div>
+          <pre class="bg-[#08090D] border border-[#222736] rounded-md p-3.5 text-[11px] text-slate-300 overflow-x-auto flex-1 max-h-[520px]"># 1. Enable Consul 2.1 Enterprise AI Runtime Fabric Feature Gate
+$ consul operator feature set -token="$CONSUL_TOKEN" consul-ai enabled
+
+# 2. AI Agent ServiceDefaults (Auto-attaches csl-mcp-sc Unix Domain Socket ext-proc)
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: booking-agent
+  annotations:
+    consul.hashicorp.com/ai-role: "ai-agent"
+    consul.hashicorp.com/oauth-client-enabled: "true"
+spec:
+  protocol: http
+  envoyExtensions:
+    - name: builtin/ext-proc
+      arguments:
+        processorTarget: "unix:///var/run/consul/csl-mcp-sc.sock"
+        messageTimeout: "5s"
+---
+# 3. AI Inference Gateway ServiceDefaults (Priority Failover & Protocol Translation)
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: travel-igw
+  annotations:
+    consul.hashicorp.com/service-kind: "inference-gateway"
+    consul.hashicorp.com/ai-observability-tracing: "enabled"
+    consul.hashicorp.com/ai-otlp-endpoint: "http://otel-collector:4318"
+spec:
+  protocol: http
+  envoyExtensions:
+    - name: builtin/ext-proc
+      arguments:
+        processorTarget: "unix:///var/run/consul/csl-ig-pro.sock"
+        messageTimeout: "15s"</pre>
         </div>
 
       </div>
     </section>
 
-    <!-- Right Column: Review Backend, HITL Approval & AI Telemetry (3 cols) -->
+    <!-- =================================================================== -->
+    <!-- RIGHT COLUMN (3 COLS): CRYPTOGRAPHIC HITL, AI GW & SPAN RELAY       -->
+    <!-- =================================================================== -->
     <section class="lg:col-span-3 flex flex-col space-y-5">
-      <!-- Human in the Loop (HITL) Card -->
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col space-y-4">
-        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-          <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300 flex items-center space-x-2">
-            <i class="fa-solid fa-user-check text-emerald-400"></i>
+
+      <!-- Card 1: MCP Sidecar Cryptographic HITL Gate (csl-mcp-sc) -->
+      <div class="hds-card overflow-hidden">
+        <div class="hds-card-header flex items-center justify-between">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-200 flex items-center space-x-2">
+            <i class="fa-solid fa-file-signature text-emerald-400"></i>
             <span>MCP Sidecar HITL Gate</span>
           </h2>
-          <span class="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded font-mono">csl-mcp-sc</span>
+          <span class="hds-badge bg-emerald-950/80 text-emerald-300 border border-emerald-800/70">csl-mcp-sc</span>
         </div>
 
-        <div id="hitl-empty" class="text-xs text-slate-500 text-center py-6">
-          State-mutating MCP tools (<code>reserve_flight</code>, <code>reserve_hotel</code>) are held by <code>csl-mcp-sc</code> until signed human approval evidence is supplied.
-        </div>
+        <div class="p-4 space-y-3">
+          <div id="hitl-empty" class="text-xs text-slate-400 bg-[#08090D] border border-[#222736] rounded p-3 font-mono leading-relaxed">
+            State-mutating MCP methods (<code class="text-slate-200">reserve_flight</code>, <code class="text-slate-200">reserve_hotel</code>) are intercepted by <code class="text-[#F472B6]">csl-mcp-sc</code> (<code class="text-rose-400">RPC -32003</code>) until cryptographic approval evidence (<code class="text-emerald-400">x-consul-hitl-evidence</code>) is signed.
+          </div>
 
-        <div id="hitl-controls" class="hidden space-y-3">
-          <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs space-y-2">
-            <div class="flex justify-between">
-              <span class="text-slate-400">Estimated Cost:</span>
-              <span id="hitl-cost" class="font-bold text-white font-mono">$0.00</span>
+          <div id="hitl-controls" class="hidden space-y-3">
+            <div class="bg-[#08090D] border border-[#262C3D] p-3 rounded text-xs font-mono space-y-2">
+              <div class="flex justify-between items-center">
+                <span class="text-slate-400">Total Reservation Spend:</span>
+                <span id="hitl-cost" class="font-bold text-white">$0.00</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-slate-400">Sidecar Enforcement:</span>
+                <span class="text-amber-400 font-semibold">HELD (-32003 AWAITING SIG)</span>
+              </div>
+              <div class="pt-1.5 border-t border-[#1D2230] text-[10px] text-slate-500">
+                Sig Binding: <code class="text-slate-400">SHA256(trip_id:approver:flight:hotel)</code>
+              </div>
             </div>
-            <div class="flex justify-between">
-              <span class="text-slate-400">Sidecar Gate:</span>
-              <span class="text-amber-400 font-semibold font-mono">AWAITING SIGNATURE</span>
+
+            <div class="grid grid-cols-2 gap-2 text-xs font-semibold">
+              <button onclick="submitReviewAction('APPROVE')" class="bg-emerald-600 hover:bg-emerald-500 text-white py-2 px-3 rounded border border-emerald-500/50 transition flex items-center justify-center space-x-1.5">
+                <i class="fa-solid fa-signature"></i>
+                <span>Sign &amp; Approve</span>
+              </button>
+              <button onclick="submitReviewAction('REJECT')" class="bg-rose-800/80 hover:bg-rose-700 text-white py-2 px-3 rounded border border-rose-600/50 transition flex items-center justify-center space-x-1.5">
+                <i class="fa-solid fa-ban"></i>
+                <span>Deny Action</span>
+              </button>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            <button onclick="submitReviewAction('APPROVE')" class="bg-emerald-600 hover:bg-emerald-500 font-bold text-white py-2 rounded-lg transition shadow-md shadow-emerald-900/30">
-              <i class="fa-solid fa-signature mr-1"></i> Sign & Approve
-            </button>
-            <button onclick="submitReviewAction('REJECT')" class="bg-rose-700 hover:bg-rose-600 font-bold text-white py-2 rounded-lg transition">
-              <i class="fa-solid fa-xmark mr-1"></i> Reject
-            </button>
+          <div id="confirmation-box" class="hidden bg-emerald-950/60 border border-emerald-700/70 p-3 rounded text-xs space-y-2 text-emerald-200">
+            <div class="font-bold flex items-center space-x-1.5 text-emerald-300">
+              <i class="fa-solid fa-circle-check"></i>
+              <span id="confirmation-title">Reservations Confirmed</span>
+            </div>
+            <div id="confirmation-details" class="text-[11px] font-mono space-y-1"></div>
           </div>
-        </div>
-
-        <div id="confirmation-box" class="hidden bg-emerald-950/80 border border-emerald-700/60 p-3 rounded-xl text-xs space-y-2 text-emerald-200">
-          <div class="font-bold flex items-center space-x-1 text-emerald-300">
-            <i class="fa-solid fa-circle-check"></i>
-            <span id="confirmation-title">Reservations Confirmed</span>
-          </div>
-          <div id="confirmation-details" class="text-[11px] font-mono space-y-1"></div>
         </div>
       </div>
 
-      <!-- AI Observability Live Telemetry Card -->
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col space-y-3">
-        <div class="flex items-center justify-between text-xs font-semibold text-slate-300 pb-2 border-b border-slate-800">
-          <span class="flex items-center space-x-1.5 text-sky-400">
-            <i class="fa-solid fa-brain"></i>
-            <span class="text-white font-bold">AI Inference Gateway</span>
+      <!-- Card 2: AI Inference Gateway Telemetry (csl-inf-rt / csl-ig-pro) -->
+      <div class="hds-card overflow-hidden">
+        <div class="hds-card-header flex items-center justify-between">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-200 flex items-center space-x-2">
+            <i class="fa-solid fa-microchip text-amber-400"></i>
+            <span>AI Inference Gateway</span>
           </span>
-          <a href="https://camp-grafana-camp-travel.apps.rosa.cluster2.s5az.p3.openshiftapps.com/explore" target="_blank" class="text-[10px] bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 px-2 py-0.5 rounded font-mono flex items-center space-x-1 transition">
-            <span>Grafana Tempo</span>
-            <i class="fa-solid fa-arrow-up-right-from-square text-[8px]"></i>
-          </a>
+          <span class="hds-badge bg-amber-950/80 text-amber-300 border border-amber-800/70">csl-inf-rt</span>
         </div>
 
-        <div id="telemetry-empty" class="text-xs text-slate-500 text-center py-4">
-          Synthesize a plan to capture zero-code <code>csl-inf-rt</code> metrics.
-        </div>
-
-        <div id="telemetry-card" class="hidden space-y-2.5 text-xs font-mono">
-          <div class="bg-slate-950 border border-slate-800 p-2.5 rounded-lg space-y-1">
-            <div class="flex items-center justify-between">
-              <span class="text-[10px] text-slate-400 uppercase tracking-wider">Routed Model</span>
-              <span id="tel-failover-badge" class="hidden text-[9px] bg-amber-950 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded">FAILOVER</span>
-            </div>
-            <div id="tel-model" class="font-bold text-emerald-400 text-[11px] truncate">meta-llama/llama-3-70b-instruct</div>
-            <div id="tel-translation" class="text-[10px] text-slate-400 truncate">OpenAI /v1/chat/completions</div>
+        <div class="p-4 space-y-3">
+          <div id="telemetry-empty" class="text-xs text-slate-400 bg-[#08090D] border border-[#222736] rounded p-3 font-mono text-center">
+            Dispatch a workload request to capture zero-code <code class="text-amber-300">csl-ig-pro</code> model routing &amp; token metrics.
           </div>
 
-          <div class="grid grid-cols-2 gap-2 text-center">
-            <div class="bg-slate-950 border border-slate-800 p-2 rounded-lg">
-              <div class="text-[10px] text-slate-400">Prompt Tokens</div>
-              <div id="tel-prompt-tokens" class="text-sm font-bold text-sky-400 font-mono">0</div>
+          <div id="telemetry-card" class="hidden space-y-2.5 text-xs font-mono">
+            <div class="bg-[#08090D] border border-[#262C3D] p-2.5 rounded space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-slate-400 uppercase tracking-wider">Upstream Model Pool</span>
+                <span id="tel-failover-badge" class="hidden text-[10px] bg-amber-950 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded font-bold">PRIORITY-2 FAILOVER</span>
+              </div>
+              <div id="tel-model" class="font-bold text-emerald-400 text-[11px] truncate">meta-llama/llama-3-70b-instruct</div>
+              <div id="tel-translation" class="text-[10px] text-slate-400 truncate">OpenAI /v1/chat/completions</div>
             </div>
-            <div class="bg-slate-950 border border-slate-800 p-2 rounded-lg">
-              <div class="text-[10px] text-slate-400">Completion Tokens</div>
-              <div id="tel-comp-tokens" class="text-sm font-bold text-indigo-400 font-mono">0</div>
+
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="bg-[#08090D] border border-[#262C3D] p-2 rounded">
+                <div class="text-[10px] text-slate-400">gen_ai.usage.input</div>
+                <div id="tel-prompt-tokens" class="text-sm font-bold text-sky-400">0</div>
+              </div>
+              <div class="bg-[#08090D] border border-[#262C3D] p-2 rounded">
+                <div class="text-[10px] text-slate-400">gen_ai.usage.output</div>
+                <div id="tel-comp-tokens" class="text-sm font-bold text-indigo-400">0</div>
+              </div>
             </div>
-          </div>
 
-          <div class="bg-slate-950 border border-slate-800 p-2.5 rounded-lg flex items-center justify-between text-[11px]">
-            <span class="text-slate-400">Total Tokens / Spend:</span>
-            <span class="font-bold text-amber-300"><span id="tel-total-tokens">0</span> tok (<span id="tel-cost">$0.000</span>)</span>
-          </div>
+            <div class="bg-[#08090D] border border-[#262C3D] p-2.5 rounded flex items-center justify-between text-[11px]">
+              <span class="text-slate-400">Total Tokens / Cost:</span>
+              <span class="font-bold text-amber-300"><span id="tel-total-tokens">0</span> tok (<span id="tel-cost">$0.000</span>)</span>
+            </div>
 
-          <div class="text-[10px] text-slate-400 flex items-center justify-between px-1">
-            <span>Vault Secret:</span>
-            <span id="tel-vault-ref" class="text-emerald-400 font-semibold truncate max-w-[150px]">vault:secret/data/ai/llm</span>
+            <div class="bg-[#08090D] border border-[#262C3D] p-2 rounded flex items-center justify-between text-[10px]">
+              <span class="text-slate-400 flex items-center space-x-1">
+                <i class="fa-solid fa-vault text-[#FFD814]"></i>
+                <span>Vault Transit:</span>
+              </span>
+              <span id="tel-vault-ref" class="text-[#FFD814] font-semibold truncate max-w-[165px]">vault:secret/data/ai/llm</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- AI Observability Audit Feed -->
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex-1 flex flex-col space-y-3">
-        <div class="flex items-center justify-between text-xs font-semibold text-slate-300">
-          <span class="flex items-center space-x-1">
-            <i class="fa-solid fa-chart-line text-sky-400"></i>
+      <!-- Card 3: Span Relay & Zero-Code OTel Stream (csl-nod-rly) -->
+      <div class="hds-card overflow-hidden flex-1 flex flex-col">
+        <div class="hds-card-header flex items-center justify-between">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-200 flex items-center space-x-2">
+            <i class="fa-solid fa-wave-square text-sky-400"></i>
             <span>Span Relay (csl-nod-rly)</span>
           </span>
-          <span class="text-[10px] text-slate-500 font-mono">Zero-Code OTel</span>
+          <span class="font-mono text-[10px] text-slate-400">OTLP :4318</span>
         </div>
-        <div id="audit-feed" class="flex-1 bg-slate-950 border border-slate-800/80 rounded-xl p-3 overflow-y-auto space-y-2 text-[11px] font-mono max-h-44">
-          <div class="text-slate-500 italic">Listening for proxy spans...</div>
+
+        <div class="p-3 flex-1 flex flex-col">
+          <div id="audit-feed" class="flex-1 bg-[#08090D] border border-[#222736] rounded p-2.5 overflow-y-auto space-y-2 text-[11px] font-mono max-h-48">
+            <div class="text-slate-500 italic">Listening for zero-code Envoy ext-proc spans...</div>
+          </div>
         </div>
       </div>
+
     </section>
 
   </main>
 
-  <!-- Act 5 Modal: Consul 2.1 CRD & Zero-Code OTel Span Inspector -->
+  <!-- ===================================================================== -->
+  <!-- ACT 5 MODAL: CONSUL 2.1 CRD & ZERO-CODE OTEL SPAN INSPECTOR           -->
+  <!-- ===================================================================== -->
   <div id="inspector-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-6">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-        <div class="flex items-center space-x-2">
-          <i class="fa-solid fa-code text-sky-400"></i>
-          <h3 class="text-sm font-bold text-white">Act 5: Consul 2.1 Agentic Runtime Fabric CRDs & Zero-Code Proxy Spans</h3>
+    <div class="bg-[#12151E] border border-[#2E3548] rounded-md max-w-5xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="px-6 py-3.5 bg-[#0E1015] border-b border-[#222736] flex items-center justify-between">
+        <div class="flex items-center space-x-2.5">
+          <span class="w-2.5 h-2.5 rounded-sm bg-[#CA2171]"></span>
+          <h3 class="text-sm font-semibold text-white font-mono">Act 5: Consul 2.1 Agentic Runtime Fabric CRDs &amp; Zero-Code Proxy Spans (csl-nod-rly)</h3>
         </div>
-        <button onclick="closeInspectorModal()" class="text-slate-400 hover:text-white text-sm font-bold px-2 py-1">&times; Close</button>
+        <button onclick="closeInspectorModal()" class="text-slate-400 hover:text-white text-xs font-mono bg-[#171B26] border border-[#2E3548] px-2.5 py-1 rounded">&times; ESC / Close</button>
       </div>
       <div class="p-6 overflow-y-auto space-y-5 text-xs font-mono">
         <div>
-          <div class="text-emerald-400 font-bold mb-1">1. Dynamic Feature Gate & Service Workload AI Roles (Consul 2.1)</div>
-          <pre class="bg-slate-950 border border-slate-800 p-3 rounded-xl text-[11px] text-slate-300 overflow-x-auto">$ consul operator feature set consul-ai enabled
+          <div class="text-[#F472B6] font-bold mb-1.5">1. Dynamic Feature Gate &amp; Service Workload AI Roles (Consul 2.1 Enterprise)</div>
+          <pre class="bg-[#08090D] border border-[#222736] p-3.5 rounded text-[11px] text-slate-300 overflow-x-auto"># Enable Consul 2.1 AI Workload Governance on the Control Plane:
+$ consul operator feature set -token="$CONSUL_TOKEN" consul-ai enabled
 
-# Kubernetes Pod Annotation (auto-injects csl-mcp-sc & Envoy ext-proc):
+# Kubernetes Pod Annotations (Triggers Connect Sidecar + csl-mcp-sc / csl-ig-pro injection):
 metadata:
   annotations:
     consul.hashicorp.com/connect-inject: "true"
-    consul.hashicorp.com/ai-role: "ai-agent" # or "mcp-server" / "inference-model"
+    consul.hashicorp.com/ai-role: "ai-agent" # Valid roles: "ai-agent" | "mcp-server" | "inference-model"
 
-# Service Definition with AI block & Unix socket ext-proc:
+# Consul ServiceDefaults Binding Envoy builtin/ext-proc to Unix Domain Socket:
 Kind = "service-defaults"
 Name = "booking-agent"
 Protocol = "http"
@@ -474,15 +994,57 @@ EnvoyExtensions = [{
 }]</pre>
         </div>
         <div>
-          <div class="text-sky-400 font-bold mb-1">2. Live Zero-Code Proxy Spans Relayed by csl-nod-rly</div>
-          <pre id="modal-live-spans" class="bg-slate-950 border border-slate-800 p-3 rounded-xl text-[11px] text-slate-300 overflow-x-auto max-h-60">Loading live spans from csl-nod-rly...</pre>
+          <div class="text-sky-400 font-bold mb-1.5">2. Live Zero-Code OpenTelemetry Spans Relayed by csl-nod-rly (:4318)</div>
+          <pre id="modal-live-spans" class="bg-[#08090D] border border-[#222736] p-3.5 rounded text-[11px] text-slate-300 overflow-x-auto max-h-72">Loading live spans from csl-nod-rly...</pre>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- ===================================================================== -->
+  <!-- APPLICATION & TELEMETRY CONTROLLER SCRIPT                             -->
+  <!-- ===================================================================== -->
   <script>
     let activeTripId = null;
+    let primaryLlmOutageSimulated = false;
+
+    function switchWorkbenchTab(tabName) {
+      ['dataplane', 'jsonrpc', 'crds'].forEach(t => {
+        const panel = document.getElementById(`workbench-tab-${t}`);
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (t === tabName) {
+          panel.classList.remove('hidden');
+          btn.className = "px-2.5 py-1 rounded bg-[#CA2171] text-white font-semibold transition";
+        } else {
+          panel.classList.add('hidden');
+          btn.className = "px-2.5 py-1 rounded text-slate-400 hover:text-slate-200 transition";
+        }
+      });
+    }
+
+    async function togglePrimaryLlmOutage() {
+      primaryLlmOutageSimulated = !primaryLlmOutageSimulated;
+      try {
+        await fetch('/api/governance/toggle-llm-outage', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({simulate_primary_llm_outage: primaryLlmOutageSimulated})
+        });
+      } catch (e) {}
+
+      const dot = document.getElementById('chaos-llm-dot');
+      const label = document.getElementById('chaos-llm-label');
+      if (primaryLlmOutageSimulated) {
+        dot.className = "w-2 h-2 rounded-full bg-amber-400 animate-ping";
+        label.innerText = "503 ACTIVE";
+        label.className = "text-amber-400 font-bold";
+      } else {
+        dot.className = "w-2 h-2 rounded-full bg-slate-500";
+        label.innerText = "OFF";
+        label.className = "text-slate-300 font-semibold";
+      }
+      fetchAuditFeed();
+    }
 
     function handlePersonaChange() {
       const sel = document.getElementById('persona-select').value;
@@ -493,22 +1055,22 @@ EnvoyExtensions = [{
       if (sel === 'contractor-202') {
         nameInput.value = 'Sam Taylor';
         roleBadge.innerText = 'External Contractor';
-        roleBadge.className = 'text-[10px] bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded';
+        roleBadge.className = 'hds-badge bg-amber-950/80 text-amber-300 border border-amber-800/70';
         scopesList.innerHTML = `
-          <span class="text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded">travel:read</span>
-          <span class="text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded">travel:plan</span>
-          <span class="text-[10px] bg-rose-950 text-rose-400 border border-rose-800 px-2 py-0.5 rounded line-through">booking:reserve</span>
-          <span class="text-[10px] bg-rose-950 text-rose-400 border border-rose-800 px-2 py-0.5 rounded line-through">partner:gds_egress</span>
+          <span class="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded">travel:read</span>
+          <span class="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded">travel:plan</span>
+          <span class="text-[10px] bg-rose-950/70 text-rose-400 border border-rose-800/70 px-2 py-0.5 rounded line-through">booking:reserve</span>
+          <span class="text-[10px] bg-rose-950/70 text-rose-400 border border-rose-800/70 px-2 py-0.5 rounded line-through">partner:gds_egress</span>
         `;
       } else {
         nameInput.value = 'Alex Mercer';
         roleBadge.innerText = 'VP Engineering';
-        roleBadge.className = 'text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded';
+        roleBadge.className = 'hds-badge bg-sky-950/80 text-sky-300 border border-sky-800/70';
         scopesList.innerHTML = `
-          <span class="text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded">travel:read</span>
-          <span class="text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded">travel:plan</span>
-          <span class="text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded">booking:reserve</span>
-          <span class="text-[10px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded">partner:gds_egress</span>
+          <span class="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded">travel:read</span>
+          <span class="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded">travel:plan</span>
+          <span class="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded">booking:reserve</span>
+          <span class="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded">partner:gds_egress</span>
         `;
       }
     }
@@ -525,7 +1087,7 @@ EnvoyExtensions = [{
         document.getElementById('inp-destination').value = 'London';
         document.getElementById('inp-duration').value = '5';
         document.getElementById('inp-budget').value = '3200';
-        document.getElementById('inp-purpose').value = 'Executive Client Quarterly Review';
+        document.getElementById('inp-purpose').value = 'Executive Client Quarterly Architecture Review';
       } else if (type === 'tokyo') {
         document.getElementById('inp-origin').value = 'SFO';
         document.getElementById('inp-destination').value = 'Tokyo';
@@ -535,8 +1097,23 @@ EnvoyExtensions = [{
       }
     }
 
+    function highlightActiveActCard(mode) {
+      const modes = ['normal', 'act1_llm_failover', 'act2_unauthorized_tool', 'act3_contractor_obo', 'act4_cycle_loop'];
+      modes.forEach(m => {
+        const btn = document.getElementById(`act-btn-${m}`);
+        if (!btn) return;
+        if (m === mode) {
+          btn.classList.add('active-act');
+        } else {
+          btn.classList.remove('active-act');
+        }
+      });
+    }
+
     function triggerActScenario(mode) {
       document.getElementById('inp-scenario-mode').value = mode;
+      highlightActiveActCard(mode);
+
       const labels = {
         'normal': 'Standard Happy Path (Full OBO + HITL)',
         'act1_llm_failover': 'Act 1: Primary LLM Outage -> Claude 3.5 Sonnet Failover (csl-inf-rt)',
@@ -554,6 +1131,7 @@ EnvoyExtensions = [{
         handlePersonaChange();
       }
 
+      switchWorkbenchTab('dataplane');
       document.getElementById('trip-form').requestSubmit();
     }
 
@@ -564,14 +1142,14 @@ EnvoyExtensions = [{
       const scenarioMode = document.getElementById('inp-scenario-mode').value || 'normal';
 
       btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Coordinating Multi-Agent Mesh...</span>';
-      statusPill.innerText = "Orchestrating...";
-      statusPill.className = "text-xs bg-red-950 text-red-400 border border-red-800 px-2 py-0.5 rounded font-mono animate-pulse";
+      btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-xs"></i><span>Executing Across Envoy Service Mesh...</span>';
+      statusPill.innerText = "Executing Mesh Call...";
+      statusPill.className = "hds-badge bg-[#CA2171]/20 text-[#F472B6] border border-[#CA2171]/50 animate-pulse";
 
       highlightStep('step-1');
-      setTimeout(() => highlightStep('step-2'), 300);
-      setTimeout(() => highlightStep('step-3'), 600);
-      setTimeout(() => highlightStep('step-4'), 900);
+      setTimeout(() => highlightStep('step-2'), 220);
+      setTimeout(() => highlightStep('step-3'), 450);
+      setTimeout(() => highlightStep('step-4'), 680);
 
       const payload = {
         user_id: document.getElementById('persona-select').value,
@@ -591,16 +1169,16 @@ EnvoyExtensions = [{
           body: JSON.stringify(payload)
         });
         const data = await resp.json();
-        renderPlan(data);
+        renderPlan(data, scenarioMode);
         fetchAuditFeed();
         fetchGovernanceStatus();
       } catch (err) {
         alert("Error coordinating trip via mesh: " + err);
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i><span>Orchestrate Travel via Mesh</span>';
-        statusPill.innerText = "Ready for Review";
-        statusPill.className = "text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded font-mono";
+        btn.innerHTML = '<i class="fa-solid fa-play text-[10px]"></i><span>Dispatch Request to Ingress Gateway</span>';
+        statusPill.innerText = "Awaiting HITL / Complete";
+        statusPill.className = "hds-badge bg-emerald-950/80 text-emerald-300 border border-emerald-800/70";
         document.getElementById('inp-scenario-mode').value = 'normal';
       }
     }
@@ -608,16 +1186,87 @@ EnvoyExtensions = [{
     function highlightStep(stepId) {
       ['step-1', 'step-2', 'step-3', 'step-4'].forEach(id => {
         const el = document.getElementById(id);
+        if (!el) return;
         if (id === stepId) {
-          el.className = "flex items-center space-x-3 text-red-400 font-bold transition";
+          el.className = "flex items-center justify-between text-[#F472B6] font-semibold py-0.5 transition";
+        } else {
+          el.className = "flex items-center justify-between text-slate-300 py-0.5 transition";
         }
       });
     }
 
-    function renderPlan(data) {
+    function updateTopologyGraph(data, scenarioMode) {
+      const tel = data.ai_telemetry || {};
+      const llmRect = document.getElementById('svg-node-llm');
+      const llmP1 = document.getElementById('svg-llm-primary');
+      const llmP2 = document.getElementById('svg-llm-secondary');
+      const mcpRect = document.getElementById('svg-node-mcp');
+      const mcpStatus = document.getElementById('svg-mcp-status');
+      const tgwRect = document.getElementById('svg-node-tgw');
+      const tgwStatus = document.getElementById('svg-tgw-status');
+
+      // Reset defaults
+      llmRect.setAttribute('stroke', '#10B981');
+      llmP1.textContent = 'P1: Llama-3-70B (200 OK)';
+      llmP1.setAttribute('fill', '#FFFFFF');
+      llmP2.textContent = 'P2: Claude 3.5 Sonnet (Standby)';
+      llmP2.setAttribute('fill', '#94A3B8');
+
+      mcpRect.setAttribute('stroke', '#38BDF8');
+      mcpStatus.textContent = 'ACL + OBO + HITL Enforced';
+      mcpStatus.setAttribute('fill', '#10B981');
+
+      tgwRect.setAttribute('stroke', '#64748B');
+      tgwStatus.textContent = 'Vault Key + partner:gds_egress';
+      tgwStatus.setAttribute('fill', '#10B981');
+
+      if (tel.failover_triggered || scenarioMode === 'act1_llm_failover') {
+        llmRect.setAttribute('stroke', '#F59E0B');
+        llmP1.textContent = 'P1: Llama-3-70B (503 OUTAGE)';
+        llmP1.setAttribute('fill', '#F87171');
+        llmP2.textContent = 'P2: Claude 3.5 Sonnet (ACTIVE)';
+        llmP2.setAttribute('fill', '#FBBF24');
+      }
+
+      if (scenarioMode === 'act2_unauthorized_tool') {
+        mcpRect.setAttribute('stroke', '#F43F5E');
+        mcpStatus.textContent = 'BLOCKED: override_hotel_rate (-32001)';
+        mcpStatus.setAttribute('fill', '#FB7185');
+      } else if (scenarioMode === 'act3_contractor_obo') {
+        tgwRect.setAttribute('stroke', '#F43F5E');
+        tgwStatus.textContent = 'DENIED: Missing gds_egress (403)';
+        tgwStatus.setAttribute('fill', '#FB7185');
+      } else if (scenarioMode === 'act4_cycle_loop') {
+        mcpRect.setAttribute('stroke', '#F43F5E');
+        mcpStatus.textContent = 'HALTED: Circuit Breaker (-32029)';
+        mcpStatus.setAttribute('fill', '#FB7185');
+      }
+    }
+
+    function renderPlan(data, scenarioMode) {
       activeTripId = data.trip_id;
       document.getElementById('itinerary-container').classList.remove('hidden');
       document.getElementById('synthesis-text').innerText = data.executive_summary;
+
+      updateTopologyGraph(data, scenarioMode);
+
+      // Populate Wire-Level JSON-RPC & ext-proc Inspector
+      const wireFrame = {
+        trace_id: data.trace_id,
+        trip_id: data.trip_id,
+        consul_ext_proc_socket: "unix:///var/run/consul/csl-mcp-sc.sock",
+        caller_spiffe_id: "spiffe://cluster.local/ns/camp-travel/sa/booking-agent",
+        delegated_obo_subject: data.obo_user,
+        delegated_obo_scopes: data.obo_scopes,
+        jsonrpc_inspection: {
+          jsonrpc: "2.0",
+          endpoint: "POST /mcp",
+          interceptions: data.governance_interceptions || [],
+          cycle_detection_iterations: data.loop_iterations || []
+        },
+        ai_inference_gateway: data.ai_telemetry || {}
+      };
+      document.getElementById('wire-inspector-json').innerText = JSON.stringify(wireFrame, null, 2);
 
       // Render Governance Interceptions (Act 2, Act 3, Act 4)
       const interceptions = data.governance_interceptions || [];
@@ -626,7 +1275,7 @@ EnvoyExtensions = [{
       if (interceptions.length > 0) {
         govBox.classList.remove('hidden');
         govList.innerHTML = interceptions.map(item => `
-          <div class="bg-slate-950/90 border border-rose-800/70 p-2.5 rounded-lg">
+          <div class="bg-[#08090D] border border-rose-800/70 p-2.5 rounded">
             <div class="font-bold text-rose-300">[${item.status}] ${item.layer}</div>
             <div class="text-slate-300 mt-0.5">${item.message}</div>
           </div>
@@ -642,8 +1291,8 @@ EnvoyExtensions = [{
       if (loops.length > 0) {
         loopBox.classList.remove('hidden');
         loopRows.innerHTML = loops.map(lp => `
-          <div class="flex items-center justify-between bg-slate-950/80 border border-slate-800 px-2.5 py-1.5 rounded">
-            <span>Call #${lp.attempt}: <code>${lp.tool}</code> (fp=${lp.fingerprint || 'match'})</span>
+          <div class="flex items-center justify-between bg-[#08090D] border border-[#222736] px-2.5 py-1.5 rounded">
+            <span>Call #${lp.attempt}: <code>${lp.tool}</code> (sha256=${lp.fingerprint || 'match'})</span>
             <span class="${lp.circuit_state === 'OPEN' ? 'text-rose-400 font-bold' : 'text-amber-300'}">
               ${lp.outcome} • Circuit: ${lp.circuit_state}
             </span>
@@ -657,8 +1306,8 @@ EnvoyExtensions = [{
       if (data.obo_delegation_chain && data.obo_delegation_chain.length > 0) {
         const chainBox = document.getElementById('obo-chain-box');
         chainBox.innerHTML = `
-          <div><span class="text-indigo-400">Subject:</span> <strong class="text-white">${data.obo_user}</strong></div>
-          <div><span class="text-sky-400">Hop 1 (Orch):</span> scopes=[${(data.obo_scopes || []).join(', ')}]</div>
+          <div><span class="text-sky-400">Subject:</span> <strong class="text-white">${data.obo_user}</strong></div>
+          <div><span class="text-[#F472B6]">Hop 1 (Orch):</span> scopes=[${(data.obo_scopes || []).join(', ')}]</div>
           <div><span class="text-emerald-400">Hop 2 (Weather):</span> narrowed=[travel:read, weather:forecast]</div>
         `;
       }
@@ -669,24 +1318,24 @@ EnvoyExtensions = [{
       const gt = bp.ground_transport || {};
       const wt = data.weather_advisory || {};
 
-      document.getElementById('flight-val').innerText = fl.airline ? `${fl.airline} (${fl.flight_number})` : 'Blocked / None';
-      document.getElementById('flight-price').innerText = fl.price_usd ? `$${fl.price_usd} USD` : 'Circuit / Policy';
+      document.getElementById('flight-val').innerText = fl.airline ? `${fl.airline} (${fl.flight_number})` : 'Blocked / Circuit Open';
+      document.getElementById('flight-price').innerText = fl.price_usd ? `$${fl.price_usd} USD` : 'RPC -32029 / Policy';
 
       document.getElementById('hotel-val').innerText = ht.name || 'Hotel Selection';
-      document.getElementById('hotel-price').innerText = `$${ht.price_per_night || 0}/night • ${ht.rating || 4.5}⭐`;
+      document.getElementById('hotel-price').innerText = `$${ht.price_per_night || 0}/night • ${ht.rating || 4.5}★`;
 
       if (gt.status === 'blocked_by_obo_policy') {
         document.getElementById('car-val').innerText = 'OBO Denied (403)';
         document.getElementById('car-price').innerText = 'Missing gds_egress';
-        document.getElementById('car-price').className = 'text-[10px] text-rose-400 font-mono';
+        document.getElementById('car-price').className = 'text-[11px] text-rose-400 font-mono';
       } else {
         document.getElementById('car-val').innerText = gt.vehicle || 'Exec Sedan';
         document.getElementById('car-price').innerText = `$${gt.total_amount_usd || 0} (Vault Key)`;
-        document.getElementById('car-price').className = 'text-[10px] text-emerald-400 font-mono';
+        document.getElementById('car-price').className = 'text-[11px] text-emerald-400 font-mono';
       }
 
       document.getElementById('weather-val').innerText = wt.forecast_summary || 'Mild & Clear';
-      document.getElementById('packing-val').innerText = `Packing Advisory: ${wt.packing_recommendations || 'Standard business attire'}`;
+      document.getElementById('packing-val').innerText = `Advisory: ${wt.packing_recommendations || 'Standard business attire'}`;
 
       // AI Observability Telemetry Rendering
       const tel = data.ai_telemetry || {};
@@ -730,19 +1379,19 @@ EnvoyExtensions = [{
         confBox.classList.remove('hidden');
 
         if (data.status === 'BLOCKED_BY_SIDECAR_POLICY') {
-          confBox.className = "bg-rose-950/80 border border-rose-700/60 p-3 rounded-xl text-xs space-y-2 text-rose-200";
-          document.getElementById('confirmation-title').innerText = "Blocked by MCP Sidecar Policy";
+          confBox.className = "bg-rose-950/70 border border-rose-700/70 p-3 rounded text-xs space-y-2 text-rose-200";
+          document.getElementById('confirmation-title').innerText = "Blocked by MCP Sidecar Policy (-32002)";
           document.getElementById('confirmation-details').innerHTML = `<div>🛡️ ${data.message}</div>`;
         } else {
-          confBox.className = "bg-emerald-950/80 border border-emerald-700/60 p-3 rounded-xl text-xs space-y-2 text-emerald-200";
-          document.getElementById('confirmation-title').innerText = "HITL Verified & Confirmed";
+          confBox.className = "bg-emerald-950/60 border border-emerald-700/70 p-3 rounded text-xs space-y-2 text-emerald-200";
+          document.getElementById('confirmation-title').innerText = "HITL Evidence Verified & Executed";
           const det = data.details || {};
           const fl = det.flight_booking || {};
           const ht = det.hotel_booking || {};
           document.getElementById('confirmation-details').innerHTML = `
-            <div>🔑 <strong>HITL Token:</strong> <code>${det.hitl_evidence_token || 'verified'}</code></div>
-            <div>✈️ <strong>Flight:</strong> ${fl.pnr || 'PNR-CONFIRMED'} (${fl.flight_number || ''})</div>
-            <div>🏨 <strong>Hotel:</strong> ${ht.booking_reference || 'HTL-CONFIRMED'} (${ht.hotel_name || ''})</div>
+            <div>🔑 <strong>x-consul-hitl-evidence:</strong> <code>${det.hitl_evidence_token || 'verified'}</code></div>
+            <div>✈️ <strong>flight-mcp:</strong> ${fl.pnr || 'PNR-CONFIRMED'} (${fl.flight_number || ''})</div>
+            <div>🏨 <strong>hotel-mcp:</strong> ${ht.booking_reference || 'HTL-CONFIRMED'} (${ht.hotel_name || ''})</div>
           `;
         }
       } else {
@@ -770,17 +1419,29 @@ EnvoyExtensions = [{
         const dot = document.getElementById('circuit-dot');
         const label = document.getElementById('circuit-state-label');
         const resetBtn = document.getElementById('btn-reset-circuit');
+        const svgIndigoRect = document.getElementById('svg-node-indigo');
+        const svgIndigoStatus = document.getElementById('svg-indigo-status');
 
         if (bookingCircuit.state === 'OPEN' || indigo.compliance_status === 'CIRCUIT_OPEN_HALTED') {
           dot.className = "w-2 h-2 rounded-full bg-rose-500 animate-ping";
           label.innerText = "OPEN (booking-agent HALTED)";
           label.className = "text-rose-400 font-bold";
           resetBtn.classList.remove('hidden');
+          if (svgIndigoRect) svgIndigoRect.setAttribute('stroke', '#F43F5E');
+          if (svgIndigoStatus) {
+            svgIndigoStatus.textContent = "CIRCUIT OPEN (booking-agent)";
+            svgIndigoStatus.setAttribute('fill', '#FB7185');
+          }
         } else {
           dot.className = "w-2 h-2 rounded-full bg-emerald-400";
           label.innerText = "CLOSED";
           label.className = "text-emerald-400 font-bold";
           resetBtn.classList.add('hidden');
+          if (svgIndigoRect) svgIndigoRect.setAttribute('stroke', '#10B981');
+          if (svgIndigoStatus) {
+            svgIndigoStatus.textContent = "SHA-256 Tuple Circuit: CLOSED";
+            svgIndigoStatus.setAttribute('fill', '#10B981');
+          }
         }
 
         const otel = data.otel || {};
@@ -797,10 +1458,10 @@ EnvoyExtensions = [{
         const feed = document.getElementById('audit-feed');
         if (data.audit_events && data.audit_events.length > 0) {
           feed.innerHTML = data.audit_events.map(ev => `
-            <div class="border-b border-slate-800/60 pb-1">
-              <span class="text-slate-500">${(ev.timestamp || '').split(' ')[1] || ''}</span>
-              <span class="${ev.event.includes('OPEN') || ev.event.includes('INTERCEPT') ? 'text-rose-400' : ev.event.includes('FAILOVER') ? 'text-amber-400' : 'text-indigo-400'} font-bold">${ev.event}</span>
-              <span class="text-slate-300 block text-[10px]">${ev.traveler ? ev.traveler + ' • ' : ''}${ev.destination || ''}</span>
+            <div class="border-b border-[#1D2230] pb-1.5">
+              <span class="text-slate-500">[${ev.timestamp.split(' ')[1] || ev.timestamp}]</span>
+              <span class="text-[#F472B6] font-semibold"> ${ev.event}</span>
+              <span class="text-slate-300"> &rarr; ${ev.destination || ev.trip_id}</span>
             </div>
           `).join('');
         }
@@ -818,6 +1479,7 @@ EnvoyExtensions = [{
 
     setInterval(fetchAuditFeed, 4000);
     setInterval(fetchGovernanceStatus, 4000);
+    fetchGovernanceStatus();
   </script>
 </body>
 </html>
