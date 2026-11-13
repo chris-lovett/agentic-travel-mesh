@@ -274,7 +274,11 @@ open http://localhost:3000
 
 #### 1. Enable the Consul 2.1 `consul-ai` Dynamic Feature Gate
 ```bash
-consul operator feature set consul-ai enabled
+# Retrieve the Consul bootstrap ACL token from the consul namespace and enable consul-ai
+CONSUL_TOKEN=$(oc get secret -n consul consul-bootstrap-acl-token -o jsonpath='{.data.token}' | base64 -d)
+
+oc exec -n consul statefulset/consul-server -- \
+  consul operator feature set -token="$CONSUL_TOKEN" consul-ai enabled
 ```
 
 #### 2. Configure Namespace & OpenShift SecurityContextConstraints (If on OpenShift)
